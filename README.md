@@ -24,7 +24,7 @@ DataScope/
 
 - ✅ Intro Splash Screen (9-second auto-close or click-to-skip)
 
-- ✅ Themed GUI with light gray background and improved visibility for logo & text
+- ✅ Themed GUI with Navy Blue background and improved visibility for logo & text
 
 - Modular script integration by role (Logging, Data Handling, Visualization)
 
