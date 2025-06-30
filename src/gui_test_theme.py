@@ -76,7 +76,13 @@ def show_intro():
     splash.overrideredirect(True)  # Remove window border
 
     # Load and resize logo
-    logo_path = os.path.join("assets", "protexxa-logo.png")
+
+    # Get absolute path to the current script's directory
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    # Go up to the dataScope directory and into assets
+    logo_path = os.path.join(base_dir, "..", "assets", "protexxa-logo.png")
+    logo_path = os.path.normpath(logo_path)
+    
     logo_image = Image.open(logo_path)
     logo_image = logo_image.resize((136, 41), Image.LANCZOS)
     logo_photo = ImageTk.PhotoImage(logo_image)
