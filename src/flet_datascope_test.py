@@ -1,7 +1,8 @@
 import flet as ft
 import asyncio
 import os
-from data_handler import create_dataset_environment
+from data_handler import create_dataset_environment, load_data
+from pathlib import Path
 
 
 # Global flag for checking if dataset was loaded
@@ -48,30 +49,59 @@ async def visual_analyst_test(e: ft.ControlEvent):
         return
     await write_output("[Visual Analyst] Test complete: Visualizations generated.", page)
 
+
+#FILE HANDLER BLOCK----------------------------------------------------------------------------------------
+
 async def load_data_result(e: ft.FilePickerResultEvent):
     page = e.page
     global data_loaded
+
     if e.files:
         file_path = e.files[0].path
         await write_output(f"[Load Data] File selected: {file_path}", page)
+
+        # 1. Get dataset name from file
+        dataset_name = Path(file_path).stem
+
+        # 2. Create environment folders for this dataset
+        project_paths = create_dataset_environment(dataset_name)
+        await write_output(f"[Environment] Folders created at: {project_paths['project']}", page)
+
+        # 3. Load the dataset
+        df = load_data(file_path)
+        if df is None:
+            await write_output("[Error] Failed to load dataset. Please check the file format.", page)
+            return
+
+        await write_output(f"[Data Handler] Loaded {len(df)} rows.", page)
+
+        # 4. Toggle buttons now that loading succeeded
         data_loaded = True
         dialog_controls["btn_log"].disabled = False
         dialog_controls["btn_data"].disabled = False
         dialog_controls["btn_visual"].disabled = False
         dialog_controls["status_label"].value = "Ready"
         dialog_controls["status_label"].color = ft.Colors.BLUE
+
     else:
         await write_output("[Load Data] No file selected.", page)
         dialog_controls["status_label"].value = "Ready"
         dialog_controls["status_label"].color = ft.Colors.BLUE
+
     page.update()
+
 
 async def load_data_handler(e: ft.ControlEvent):
     page = e.page
     dialog_controls["status_label"].value = "Processing..."
     dialog_controls["status_label"].color = ft.Colors.ORANGE
-    page.update()
     dialog_controls["file_picker"].pick_files(allow_multiple=False, allowed_extensions=["csv", "xlsx", "xls"])
+    page.update()
+    
+
+#FILE HANDLER BLOCK----------------------------------------------------------------------------------------
+
+
 
 # Synchronous theme toggle handler to avoid threading issues
 def on_theme_toggle(e: ft.ControlEvent):
@@ -112,7 +142,7 @@ async def main(page: ft.Page):
     splash_content = ft.Column(
         [
             ft.Text("PROPERTY OF", font_family="Helvetica", size=10, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-            ft.Image(src="dataScope/assets/protexxa-logo.png", width=136, height=41, fit=ft.ImageFit.CONTAIN,
+            ft.Image(src="dataScope/assets/protexxa-logo.png", width=156, height=61, fit=ft.ImageFit.CONTAIN,
                      error_content=ft.Text("Logo not found", color=ft.Colors.RED)),
             ft.Text(
                 "13.1°N 59.32°W → 43° 39' 11.6136'' N 79° 22' 59.4624'' W\n"
@@ -121,10 +151,9 @@ async def main(page: ft.Page):
                 font_family="Helvetica", size=10, color=ft.Colors.WHITE, text_align=ft.TextAlign.CENTER
             ),
         ],
-        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        alignment=ft.alignment.center,
-        spacing=10,
-        expand=False,
+        alignment=ft.MainAxisAlignment.CENTER,              # <--- vertical centering
+        horizontal_alignment=ft.CrossAxisAlignment.CENTER,  # <--- horizontal centering
+        expand=True,
     )
     splash_container = ft.Container(
         content=splash_content,
@@ -136,7 +165,7 @@ async def main(page: ft.Page):
 
     page.add(splash_container)
     page.update()
-    await asyncio.sleep(9)
+    await asyncio.sleep(2)  # Show splash for 2 seconds
     await transition_to_gui(page)
 
 async def transition_to_gui(page: ft.Page):
@@ -150,7 +179,7 @@ async def transition_to_gui(page: ft.Page):
     header = ft.WindowDragArea(
         content=ft.Row(
             controls=[
-                ft.Text("Protexxa Datascope - Alpha 1.0", font_family="Arial", size=16, weight=ft.FontWeight.BOLD),
+                ft.Text("Protexxa Datascope - Alpha 1.0", font_family="Arial", size=20, weight=ft.FontWeight.NORMAL),
                 dialog_controls["theme_switch"],
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
