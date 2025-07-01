@@ -1,6 +1,8 @@
 import flet as ft
 import asyncio
 import os
+from data_handler import create_dataset_environment
+
 
 # Global flag for checking if dataset was loaded
 data_loaded = False
