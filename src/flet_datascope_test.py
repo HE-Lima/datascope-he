@@ -110,7 +110,7 @@ async def main(page: ft.Page):
     splash_content = ft.Column(
         [
             ft.Text("PROPERTY OF", font_family="Helvetica", size=10, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-            ft.Image(src="/assets/protexxa-logo.png", width=136, height=41, fit=ft.ImageFit.CONTAIN,
+            ft.Image(src="dataScope/assets/protexxa-logo.png", width=136, height=41, fit=ft.ImageFit.CONTAIN,
                      error_content=ft.Text("Logo not found", color=ft.Colors.RED)),
             ft.Text(
                 "13.1°N 59.32°W → 43° 39' 11.6136'' N 79° 22' 59.4624'' W\n"
@@ -122,7 +122,7 @@ async def main(page: ft.Page):
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         alignment=ft.alignment.center,
         spacing=10,
-        expand=True,
+        expand=False,
     )
     splash_container = ft.Container(
         content=splash_content,
@@ -148,7 +148,7 @@ async def transition_to_gui(page: ft.Page):
     header = ft.WindowDragArea(
         content=ft.Row(
             controls=[
-                ft.Text("DataScope Project - Day-0 Interface", font_family="Arial", size=16, weight=ft.FontWeight.BOLD),
+                ft.Text("Protexxa Datascope - Alpha 1.0", font_family="Arial", size=16, weight=ft.FontWeight.BOLD),
                 dialog_controls["theme_switch"],
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -189,7 +189,7 @@ async def transition_to_gui(page: ft.Page):
     file_ops_frame = ft.Container(content=ft.Column([
         ft.Text("(File save buttons and options will be updated post Day-0)", color=ft.Colors.GREY_600)
     ]), border_radius=ft.border_radius.all(10), border=ft.border.all(1, ft.Colors.BLUE_GREY_200),
-        padding=10, margin=ft.margin.only(top=15, left=10, right=10), alignment=ft.alignment.center, width=700)
+        padding=10, margin=ft.margin.only(top=0, left=0, right=0, bottom=0), alignment=ft.alignment.center, width=700)
 
     # Status bar
     dialog_controls["status_label"] = ft.Text("Ready", color=ft.Colors.BLUE)
