@@ -51,7 +51,7 @@ async def visual_analyst_test(e: ft.ControlEvent):
 
 
 #FILE HANDLER BLOCK----------------------------------------------------------------------------------------
-from data_handler import saved_filepath
+from data_handler import save_filepath, get_data_stats
 #-----------------------------------------------------------------------
 
 async def load_data_result(e: ft.FilePickerResultEvent):
@@ -75,10 +75,9 @@ async def load_data_result(e: ft.FilePickerResultEvent):
             await write_output("[Error] Failed to load dataset. Please check the file format.", page)
             return
 
-        await write_output(f"[Data Handler] Loaded {len(df)} rows.", page)
-        file_size = os.path.getsize(file_path)
-        await write_output(f"[Data Handler] File size: {file_size / (1024 * 1024):.2f} MB", page)
-
+        info = get_data_stats(df, file_path)
+        await write_output(info["log1"], page)
+        await write_output(info["log2"], page)
 
         # 4. Toggle buttons now that loading succeeded
         data_loaded = True
@@ -104,7 +103,7 @@ async def load_data_handler(e: ft.ControlEvent):
     page.update()
     
 
-#FILE HANDLER BLOCK----------------------------------------------------------------------------------------
+#FILE HANDLER BLOCK END----------------------------------------------------------------------------------------
 
 
 
@@ -171,7 +170,7 @@ async def main(page: ft.Page):
 
     page.add(splash_container)
     page.update()
-    await asyncio.sleep(2)  # Show splash for 2 seconds
+    await asyncio.sleep(1)  # SPLASH SCREEN DELAY (CURRENTLY 1 SECOND FOR TESTING)
     await transition_to_gui(page)
 
 async def transition_to_gui(page: ft.Page):
