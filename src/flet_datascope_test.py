@@ -51,6 +51,8 @@ async def visual_analyst_test(e: ft.ControlEvent):
 
 
 #FILE HANDLER BLOCK----------------------------------------------------------------------------------------
+from data_handler import saved_filepath
+#-----------------------------------------------------------------------
 
 async def load_data_result(e: ft.FilePickerResultEvent):
     page = e.page
@@ -74,6 +76,9 @@ async def load_data_result(e: ft.FilePickerResultEvent):
             return
 
         await write_output(f"[Data Handler] Loaded {len(df)} rows.", page)
+        file_size = os.path.getsize(file_path)
+        await write_output(f"[Data Handler] File size: {file_size / (1024 * 1024):.2f} MB", page)
+
 
         # 4. Toggle buttons now that loading succeeded
         data_loaded = True
@@ -119,11 +124,12 @@ async def main(page: ft.Page):
 
     # Set default theme
     page.theme_mode = ft.ThemeMode.LIGHT
-    page.title = "DataScope Day-0 Interface"
+    page.title = "Protexxa Datascope - Alpha"
     page.window_width = 800
     page.window_height = 600
     page.window_resizable = True
     page.vertical_alignment = ft.CrossAxisAlignment.START
+    page.window.icon = "./dataScope/assets/DataScopeLogo.ico"
 
     # FilePicker
     dialog_controls["file_picker"] = ft.FilePicker(
@@ -192,7 +198,7 @@ async def transition_to_gui(page: ft.Page):
         multiline=True, read_only=True,
         min_lines=20, max_lines=20,
         width=700, height=300,
-        border_radius=ft.border_radius.all(10),
+        border_radius=ft.border_radius.all(20),
         border_color=ft.Colors.BLUE_GREY_200,
         content_padding=10,
         value="",
@@ -201,17 +207,17 @@ async def transition_to_gui(page: ft.Page):
     # Buttons
     btn_load = ft.ElevatedButton(text="Load Data",
                                  on_click=load_data_handler,
-                                 style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)))
+                                 style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15)))
     dialog_controls.update({
         "btn_log": ft.ElevatedButton(text="Test Logging & Error Handler",
                                        on_click=logging_handler_test,
-                                       disabled=True, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8))),
+                                       disabled=True, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15))),
         "btn_data": ft.ElevatedButton(text="Test Data Handling",
                                         on_click=data_handler_test,
-                                        disabled=True, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8))),
+                                        disabled=True, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15))),
         "btn_visual": ft.ElevatedButton(text="Test Visual Analyst",
                                           on_click=visual_analyst_test,
-                                          disabled=True, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)))
+                                          disabled=True, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15)))
     })
     button_row = ft.Row(controls=[btn_load, dialog_controls["btn_log"], dialog_controls["btn_data"], dialog_controls["btn_visual"]],
                         alignment=ft.MainAxisAlignment.CENTER, spacing=10)

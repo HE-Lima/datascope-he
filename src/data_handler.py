@@ -7,10 +7,17 @@ import logging
 import pandas as pd
 from pathlib import Path   
 import csv
-
+#----------------------------------------------------------------------
+def save_filepath(path):
+    '''Save the file path to a global variable for later use.'''
+    global saved_filepath
+    saved_filepath = str(path)
 #----------------------------------------------------------------------
 def create_dataset_environment(dataset_name: str) -> dict:
-    base_path = Path("./datasets/processed") / dataset_name
+    '''Create a structured directory environment for the dataset.'''
+    documents_dir = Path.home() / "Documents"
+    base_path = documents_dir / "ProtexxaDatascope" / dataset_name
+
     subdirs = {
         "stages": base_path / "stages",
         "process": base_path / "process",
