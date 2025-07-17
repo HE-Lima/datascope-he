@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['dataScope\\src\\flet_datascope_test.py'],
+    ['src/flet_datascope_test.py'],
     pathex=[],
     binaries=[],
     datas=[],
