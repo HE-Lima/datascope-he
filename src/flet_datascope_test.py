@@ -1,5 +1,5 @@
+import flet as ft
 import asyncio
-import json
 import os
 from data_handler import create_dataset_environment, load_data, run_analysis
 import data_handler
@@ -36,9 +36,8 @@ def save_theme_preference(dark_mode: bool):
 # Global flag for checking if dataset was loaded
 data_loaded = False
 
-# Control references shared across handlers
-
-dialog_controls: dict[str, ft.Control | None] = {
+# Control references
+dialog_controls = {
     "output_text_field": None,
     "btn_log": None,
     "btn_data": None,
@@ -52,54 +51,33 @@ dialog_controls: dict[str, ft.Control | None] = {
 
 async def write_output(message: str, page: ft.Page):
     print(message)
-    tf = dialog_controls.get("output_text_field")
-    if isinstance(tf, ft.TextField):
-        tf.value += message + "\n"
+    if dialog_controls["output_text_field"]:
+        dialog_controls["output_text_field"].value += message + "\n"
         page.update()
 
-
-
-def _enable_test_buttons(enabled: bool) -> None:
-    for name in ("btn_log", "btn_data", "btn_visual"):
-        btn = dialog_controls.get(name)
-        if isinstance(btn, ft.ElevatedButton):
-            btn.disabled = not enabled
-
-
-async def check_data_loaded(page: ft.Page) -> bool:
+async def check_data_loaded(page: ft.Page):
     if not data_loaded:
         await write_output("[Error] Load data first before testing.", page)
         return False
     return True
 
-# ---------------------------------------------------------------------------
-# Basic feature tests
-# ---------------------------------------------------------------------------
 async def logging_handler_test(e: ft.ControlEvent):
     page = e.page
     if not await check_data_loaded(page):
         return
-    toggle_progress(page, True)
     await write_output("[Logging Handler] Test complete: Logging system operational.", page)
-    toggle_progress(page, False)
-
 
 async def data_handler_test(e: ft.ControlEvent):
     page = e.page
     if not await check_data_loaded(page):
         return
-    toggle_progress(page, True)
     await write_output("[Data Handler] Test complete: Data loaded and validated.", page)
-    toggle_progress(page, False)
-
 
 async def visual_analyst_test(e: ft.ControlEvent):
     page = e.page
     if not await check_data_loaded(page):
         return
-    toggle_progress(page, True)
     await write_output("[Visual Analyst] Test complete: Visualizations generated.", page)
-    toggle_progress(page, False)
 
 
 #FILE HANDLER BLOCK----------------------------------------------------------------------------------------
@@ -109,12 +87,10 @@ from pathlib import Path
 
 async def load_data_result(e: ft.FilePickerResultEvent):
     global current_df, data_loaded
-    global current_df, data_loaded
     page = e.page
     
 
     if e.files:
-        toggle_progress(page, True)
         file_path = e.files[0].path
         save_filepath(file_path)           # ← store the real string path
         dialog_controls["loaded_file"] = file_path
@@ -326,7 +302,6 @@ async def main(page: ft.Page):
     page.window.frameless = True
     page.window.title_bar_hidden = True
     page.window.resizable = True
-    page.window.resizable = True
     page.vertical_alignment = ft.CrossAxisAlignment.START
 
     # Window size
@@ -355,6 +330,7 @@ async def main(page: ft.Page):
     )
     page.overlay.append(dialog_controls["file_picker"])
 
+    # Theme toggle switch
     dialog_controls["theme_switch"] = ft.Switch(
     label="Dark Mode",
     value=dark_mode_enabled,
@@ -384,20 +360,18 @@ async def main(page: ft.Page):
         expand=True,
         bgcolor="#1e1e2f",
         alignment=ft.alignment.center,
-        on_click=lambda _: asyncio.create_task(transition_to_gui(page)),
+        on_click=transition_to_gui,
     )
 
-    page.add(splash)
+    page.add(splash_container)
     page.update()
     await asyncio.sleep(1)  # SPLASH SCREEN DELAY (CURRENTLY 1 SECOND FOR TESTING)
     await transition_to_gui(page)
-
 
 async def transition_to_gui(page: ft.Page):
     # 1) Restore window chrome & clear splash
     page.window.frameless = False
     page.window.title_bar_hidden = False
-    page.controls.clear()
     page.controls.clear()
     page.update()
 
@@ -468,24 +442,6 @@ async def transition_to_gui(page: ft.Page):
     )
 
     dialog_controls["status_label"] = ft.Text("Ready", color=ft.Colors.BLUE)
-    dialog_controls["progress_ring"] = ft.ProgressRing(visible=False)
-
-    analysis_dropdown = ft.Dropdown(
-        label="Analysis Type",
-        width=200,
-        options=[
-            ft.dropdown.Option("Data Preview"),
-            ft.dropdown.Option("Missing Values"),
-            ft.dropdown.Option("Duplicate Detection"),
-            ft.dropdown.Option("Placeholder Detection"),
-            ft.dropdown.Option("Special Character Analysis"),
-        ],
-    )
-    column_dropdown = ft.Dropdown(
-        label="Column",
-        width=200,
-        options=[ft.dropdown.Option("All Columns")],
-    )
 
     # 4) Advanced Tab Widgets (SEAN FEATURE BUILDOUT)
     analysis_dropdown = ft.Dropdown(

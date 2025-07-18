@@ -1,23 +1,23 @@
 # src/data_handler.py
 
 #----------------------------------------------------------------------
-# Libraries
+#Libraries
 #----------------------------------------------------------------------
 import logging
 import pandas as pd
-from pathlib import Path
-
+from pathlib import Path   
+import csv
+import os
+from tqdm import tqdm
+from tabulate import tabulate
 #----------------------------------------------------------------------
-
 def save_filepath(path):
-    """Save the file path to a global variable for later use."""
+    '''Save the file path to a global variable for later use.'''
     global saved_filepath
     saved_filepath = str(path)
-
 #----------------------------------------------------------------------
-
 def create_dataset_environment(dataset_name: str) -> dict:
-    """Create a structured directory environment for the dataset."""
+    '''Create a structured directory environment for the dataset.'''
     documents_dir = Path.home() / "Documents"
     base_path = documents_dir / "ProtexxaDatascope" / dataset_name
 
@@ -26,6 +26,7 @@ def create_dataset_environment(dataset_name: str) -> dict:
         "process": base_path / "process",
         "garbage": base_path / "garbage",
         "chunks": base_path / "chunks",
+        "converted": base_path / "converted"
     }
 
     for path in subdirs.values():
@@ -33,110 +34,234 @@ def create_dataset_environment(dataset_name: str) -> dict:
 
     return {
         "project": base_path,
-        **subdirs,
+        **subdirs
     }
+
+
 
 logger = logging.getLogger(__name__)
 
 def load_data(file_path):
-    """Load CSV or Excel data depending on file extension."""
-    logger.info(f"Loading data from: {file_path}")
+    """
+    Loads a dataset and returns the DataFrame or None if it fails.
+    """
     try:
-        file_path = Path(file_path)
-        if file_path.suffix.lower() in [".xlsx", ".xls"]:
+        if file_path.endswith(".csv"):
+            df = pd.read_csv(file_path)
+        elif file_path.endswith((".xls", ".xlsx")):
             df = pd.read_excel(file_path)
         else:
-            df = pd.read_csv(file_path)
-        logger.info("Data loaded successfully.")
+            raise ValueError("Unsupported file format")
+
         return df
     except Exception as e:
-        logger.error(f"Error loading data: {e}")
+        logger.error(f"Failed to load data: {e}")
         return None
 
 
 def get_data_stats(df, file_path):
-    """Return row count and file size information for the dataset."""
+    """
+    Returns a dict of human-readable info about the dataset.
+    """
     try:
         row_count = len(df)
-        file_size = Path(file_path).stat().st_size / (1024 * 1024)
+        file_size = os.path.getsize(file_path) / (1024 * 1024)
+
         return {
             "row_count": row_count,
             "file_size": file_size,
             "log1": f"[Data Handler] Loaded {row_count} rows.",
-            "log2": f"[Data Handler] File size: {file_size:.2f} MB",
+            "log2": f"[Data Handler] File size: {file_size:.2f} MB"
         }
+
     except Exception as e:
         logger.error(f"Error getting data stats: {e}")
         return {
             "row_count": 0,
             "file_size": 0,
             "log1": "[Data Handler] Failed to get row count.",
-            "log2": "[Data Handler] Failed to calculate file size.",
+            "log2": "[Data Handler] Failed to calculate file size."
         }
 
 
-def split_into_chunks(dataset_name: str, file_path: str, chunk_size_mb: int = 256, logger_fn=None):
-    """Split a CSV file into smaller chunks by approximate size."""
-    logger_fn = logger_fn or (lambda msg: None)
+
+
+def split_into_chunks(dataset_name, input_file, chunk_size_mb=256, logger_fn=None):
     try:
-        df = pd.read_csv(file_path)
-        total_rows = len(df)
-        bytes_per_row = df.memory_usage(index=True, deep=True).sum() / total_rows
-        rows_per_chunk = max(1, int((chunk_size_mb * 1024 * 1024) / bytes_per_row))
+        paths = create_dataset_environment(dataset_name)
+        output_dir = paths["chunks"]
 
-        chunk_dir = Path(file_path).parent / f"{dataset_name}_chunks"
-        chunk_dir.mkdir(parents=True, exist_ok=True)
+        chunk_size_bytes = chunk_size_mb * 1024 * 1024
+        base_filename = os.path.splitext(os.path.basename(input_file))[0]
 
-        total_chunks = 0
-        for start in range(0, total_rows, rows_per_chunk):
-            chunk = df.iloc[start:start + rows_per_chunk]
-            chunk_file = chunk_dir / f"{dataset_name}_{total_chunks + 1}.csv"
-            chunk.to_csv(chunk_file, index=False)
-            logger_fn(f"Saved {chunk_file}")
-            total_chunks += 1
+        def log(msg):
+            if logger_fn:
+                logger_fn(msg)
+            else:
+                print(msg)
 
-        return {"total_rows": total_rows, "total_chunks": total_chunks}
+        log(f"Reading from: {input_file}")
+        log(f"Writing chunks to: {output_dir}")
+        log(f"Chunk size: {chunk_size_mb} MB")
+
+        with open(input_file, 'r', encoding='utf-8') as infile:
+            reader = csv.reader(infile)
+            try:
+                header = next(reader)
+            except StopIteration:
+                log("Error: File is empty or missing a header.")
+                return {
+                    "total_rows": 0,
+                    "total_chunks": 0,
+                    "output_dir": str(output_dir)
+                }
+
+            chunk_index = 0
+            current_chunk = []
+            current_chunk_size = 0
+            row_count = 0
+
+            for row in tqdm(reader, desc="Splitting CSV", unit="rows"):
+                row_size = len(",".join(row).encode("utf-8"))
+
+                if current_chunk_size + row_size > chunk_size_bytes:
+                    output_file = os.path.join(output_dir, f"{base_filename}_chunk_{chunk_index}.csv")
+                    with open(output_file, 'w', encoding='utf-8', newline='') as outfile:
+                        writer = csv.writer(outfile)
+                        writer.writerow(header)
+                        writer.writerows(current_chunk)
+                    log(f"Chunk {chunk_index} written: {len(current_chunk)} rows")
+
+                    chunk_index += 1
+                    current_chunk = []
+                    current_chunk_size = 0
+
+                current_chunk.append(row)
+                current_chunk_size += row_size
+                row_count += 1
+
+            # Final chunk
+            if current_chunk:
+                output_file = os.path.join(output_dir, f"{base_filename}_chunk_{chunk_index}.csv")
+                with open(output_file, 'w', encoding='utf-8', newline='') as outfile:
+                    writer = csv.writer(outfile)
+                    writer.writerow(header)
+                    writer.writerows(current_chunk)
+                log(f"Final chunk {chunk_index} written: {len(current_chunk)} rows")
+
+        log(f"All chunks written. Total rows: {row_count}")
+        log(f"Output directory contents: {os.listdir(output_dir)}")
+
+        return {
+            "total_rows": row_count,
+            "total_chunks": chunk_index + 1,
+            "output_dir": str(output_dir)
+        }
+
+    except FileNotFoundError as e:
+        logging.error(f"File not found: {e}")
+        if logger_fn: logger_fn(f"Error: {e}")
+    except PermissionError as e:
+        logging.error(f"Permission error: {e}")
+        if logger_fn: logger_fn(f"Error: {e}")
     except Exception as e:
-        logger.error(f"Error splitting file: {e}")
-        return None
+        logging.error(f"Unexpected error: {e}")
+        if logger_fn: logger_fn(f"Unexpected error: {e}")
+
+    return {
+        "total_rows": 0,
+        "total_chunks": 0,
+        "output_dir": ""
+    }
 
 
-def run_analysis(df, analysis_type: str, column: str | None, rows: int, descending: bool):
-    """Perform simple data analysis tasks."""
-    if df is None:
-        return "[Error] No data provided."
 
-    try:
-        if analysis_type == "Data Preview":
-            subset = df if column is None else df[[column]]
-            data = subset.tail(rows) if descending else subset.head(rows)
-            return data.to_string()
-        elif analysis_type == "Missing Values":
-            if column:
-                count = df[column].isna().sum()
-                return f"Missing values in {column}: {count}"
-            else:
-                return df.isna().sum().to_string()
-        elif analysis_type == "Duplicate Detection":
-            dups = df[df.duplicated(subset=column)] if column else df[df.duplicated()]
-            return dups.head(rows).to_string()
-        elif analysis_type == "Placeholder Detection":
-            placeholders = {"N/A", "NA", "-", "--", "null"}
-            if column:
-                mask = df[column].astype(str).isin(placeholders)
-            else:
-                mask = df.astype(str).isin(placeholders).any(axis=1)
-            return df[mask].head(rows).to_string()
-        elif analysis_type == "Special Character Analysis":
-            import re
-            pattern = re.compile(r"[^\w\s]")
-            if column:
-                mask = df[column].astype(str).str.contains(pattern)
-            else:
-                mask = df.apply(lambda s: s.astype(str).str.contains(pattern)).any(axis=1)
-            return df[mask].head(rows).to_string()
-    except Exception as e:
-        logger.error(f"Analysis error: {e}")
-        return "[Error] Analysis failed."
 
-    return "[Error] Unknown analysis type."
+#SOURCE APP FUNCTIONALITY BUILDOUT (SEAN)
+PLACEHOLDERS = {"N/A","NA","None","none","unknown","Unknown","-","TBD","tbd","0000","","null","NULL","n/a"}
+
+def run_analysis(df: pd.DataFrame,
+                 analysis_type: str,
+                 column: str = None,
+                 num_rows: int = 10,
+                 sort_desc: bool = False
+) -> str:
+    """
+    Dispatch to one of:
+      - Data Preview
+      - Missing Values
+      - Duplicate Detection
+      - Placeholder Detection
+      - Special Character Analysis
+    Returns a formatted string.
+    """
+    # subset + sort
+    working = df[[column]] if column and column in df.columns else df.copy()
+    if sort_desc:
+        working = working.iloc[::-1]
+    
+    if analysis_type == "Data Preview":
+        preview = working.head(num_rows)
+        dtypes = [(c,str(t)) for c,t in working.dtypes.items()]
+        return (
+            "[Data Types]\n" +
+            tabulate(dtypes, headers=["Column","Dtype"], tablefmt="fancy_grid") +
+            "\n\n[Preview]\n" +
+            tabulate(preview, headers="keys", tablefmt="fancy_grid")
+        )
+    
+    if analysis_type == "Missing Values":
+        miss = working.isnull().sum()
+        total = len(working)
+        rows = [
+            (c, int(cnt), f"{cnt/total*100:.2f}%")
+            for c,cnt in miss.items() if cnt>0
+        ]
+        if not rows:
+            return "No missing values detected."
+        return (
+            "=== Missing Values ===\n" +
+            tabulate(rows, headers=["Column","Count","%"], tablefmt="fancy_grid") +
+            f"\n\nTotal rows: {total}"
+        )
+    
+    if analysis_type == "Duplicate Detection":
+        dups = working[working.duplicated(keep=False)]
+        if dups.empty:
+            return f"No duplicates. Checked {len(working)} rows."
+        unique = working[working.duplicated()]
+        report = [
+            ["Total Rows", len(working)],
+            ["Duplicate entries", len(dups)],
+            ["Unique duplicate rows", len(unique)]
+        ]
+        body = tabulate(dups.head(num_rows), headers="keys", tablefmt="fancy_grid")
+        return "🔍 Duplicate Report\n" + tabulate(report, headers=["Metric","Value"], tablefmt="fancy_grid") + "\n\n" + body
+    
+    if analysis_type == "Placeholder Detection":
+        rec = []
+        total= len(working)
+        for c in working.columns:
+            col_ser = working[c].astype(str).str.strip()
+            cnt = col_ser.isin(PLACEHOLDERS).sum()
+            if cnt>0:
+                rec.append([c, cnt, f"{cnt/total*100:.2f}%"])
+        if not rec:
+            return "No placeholders found."
+        return tabulate(rec, headers=["Column","Count","%"], tablefmt="fancy_grid")
+    
+    if analysis_type == "Special Character Analysis":
+        pat = r"[^\w\s]"
+        rec=[]
+        for c in working.columns:
+            ser = working[c].astype(str)
+            mask = ser.str.contains(pat, regex=True)
+            cnt = int(mask.sum())
+            if cnt:
+                chars = set("".join(ser[mask]))
+                rec.append([c, cnt, "".join(sorted(chars))])
+        if not rec:
+            return "No special characters found."
+        return tabulate(rec, headers=["Column","Count","Chars"], tablefmt="fancy_grid")
+    
+    return f"[Notice] {analysis_type} not recognized."
