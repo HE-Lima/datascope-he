@@ -46,10 +46,20 @@ CHUNK_SIZE_DEFAULT = 256
 convert_input_path = None
 convert_output_dir = None
 
+
+def get_icons_module():
+    """Return the icons module compatible with the installed Flet version."""
+    logging.getLogger(__name__).debug("Selecting Flet icons module")
+    print("Selecting Flet icons module")
+    return getattr(ft, "icons", ft.Icons)
+
+
+ICONS = get_icons_module()
+
 # Icon to represent CSV splitting. Older versions of this file referenced
 # ``ft.Icon.SPLIT_CSV_OUTLINE`` which does not exist in Flet.  We gracefully
 # fall back to ``HORIZONTAL_SPLIT_OUTLINED`` to avoid runtime errors.
-SPLIT_CSV_ICON = getattr(ft.Icons, "SPLIT_CSV_OUTLINE", ft.Icons.HORIZONTAL_SPLIT_OUTLINED)
+SPLIT_CSV_ICON = getattr(ICONS, "SPLIT_CSV_OUTLINE", ICONS.HORIZONTAL_SPLIT_OUTLINED)
 
 # Control references
 dialog_controls = {
@@ -693,7 +703,7 @@ async def transition_to_gui(page: ft.Page):
                         [
                             ft.ElevatedButton(
                                 text="Select File",
-                                icon=ft.icons.UPLOAD_FILE,
+                                icon=ICONS.UPLOAD_FILE,
                                 on_click=lambda e: dialog_controls["convert_file_picker"].pick_files(allow_multiple=False),
                             ),
                             dialog_controls["convert_file_display"],
@@ -705,7 +715,7 @@ async def transition_to_gui(page: ft.Page):
                         [
                             ft.ElevatedButton(
                                 text="Choose Folder",
-                                icon=ft.icons.FOLDER_OPEN,
+                                icon=ICONS.FOLDER_OPEN,
                                 on_click=lambda e: dialog_controls["convert_dir_picker"].get_directory_path(),
                             ),
                             dialog_controls["convert_dir_display"],
@@ -715,7 +725,7 @@ async def transition_to_gui(page: ft.Page):
                     ),
                     ft.ElevatedButton(
                         text="Convert to CSV",
-                        icon=ft.icons.DOWNLOAD,
+                        icon=ICONS.DOWNLOAD,
                         on_click=on_convert_file,
                     ),
                     dialog_controls["convert_status"],
