@@ -51,6 +51,7 @@ dialog_controls = {
     "chunk_status": None,
     "logo_image": None,
     "tabs": None,
+    "splash_container": None,
 }
 
 async def write_output(message: str, page: ft.Page):
@@ -404,7 +405,10 @@ async def main(page: ft.Page):
         bgcolor="#1e1e2f",
         alignment=ft.alignment.center,
         on_click=transition_to_gui,
+        animate_opacity=ft.Animation(300, ft.AnimationCurve.EASE_IN_OUT),
+        opacity=1.0,
     )
+    dialog_controls["splash_container"] = splash_container
 
     page.add(splash_container)
     page.update()
@@ -412,7 +416,14 @@ async def main(page: ft.Page):
     await transition_to_gui(page)
 
 async def transition_to_gui(page: ft.Page):
-    # 1) Restore window chrome & clear splash
+    # 1) Fade out splash screen
+    splash = dialog_controls.get("splash_container")
+    if splash:
+        splash.opacity = 0
+        page.update()
+        await asyncio.sleep(0.3)
+
+    # 2) Restore window chrome & clear splash
     page.window.frameless = False
     page.window.title_bar_hidden = False
     page.controls.clear()
@@ -579,8 +590,14 @@ async def transition_to_gui(page: ft.Page):
     dialog_controls["tabs"] = tabs
 
 
-    # 6) Render
-    page.add(ft.Column([header, tabs], expand=True))
+    # 6) Render with fade-in
+    main_container = ft.Column([
+        header,
+        tabs
+    ], expand=True, opacity=0.0, animate_opacity=ft.Animation(300, ft.AnimationCurve.EASE_IN_OUT))
+    page.add(main_container)
+    page.update()
+    main_container.opacity = 1.0
     page.update()
 
     
