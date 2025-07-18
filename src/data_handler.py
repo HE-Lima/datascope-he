@@ -69,6 +69,25 @@ def convert_to_csv(df: pd.DataFrame, original_path: str) -> Path:
     return csv_path
 
 
+def convert_txt_to_csv(txt_path: str) -> Path:
+    """Convert a whitespace delimited TXT file to CSV.
+
+    Parameters
+    ----------
+    txt_path : str
+        Path to the TXT file to convert.
+
+    Returns
+    -------
+    Path
+        Location of the written CSV file.
+    """
+    df = pd.read_csv(txt_path, sep=r"\s+", engine="python")
+    logger.info("Read TXT file %s with shape %s", txt_path, df.shape)
+    print(f"[Data Handler] Loaded TXT file -> {txt_path}")
+    return convert_to_csv(df, txt_path)
+
+
 
 def load_data(file_path):
     """Load data from various formats and convert to CSV if needed.
@@ -95,6 +114,8 @@ def load_data(file_path):
             df = pd.read_parquet(file_path)
         elif suffix == ".tsv":
             df = pd.read_csv(file_path, sep="\t")
+        elif suffix == ".txt":
+            df = pd.read_csv(file_path, sep=r"\s+", engine="python")
         else:
             raise ValueError("Unsupported file format")
 

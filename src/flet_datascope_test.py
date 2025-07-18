@@ -203,7 +203,10 @@ async def load_data_handler(e: ft.ControlEvent):
         page.overlay.append(dialog_controls["file_picker"])  # required for FilePicker to work
 
     page.update()
-    dialog_controls["file_picker"].pick_files(allow_multiple=False, allowed_extensions=["csv", "xlsx", "xls"])
+    dialog_controls["file_picker"].pick_files(
+        allow_multiple=False,
+        allowed_extensions=["csv", "xlsx", "xls", "txt"],
+    )
 
 async def chunk_csv_handler(e: ft.ControlEvent):
 
