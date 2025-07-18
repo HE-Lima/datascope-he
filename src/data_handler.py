@@ -88,6 +88,41 @@ def convert_txt_to_csv(txt_path: str) -> Path:
     return convert_to_csv(df, txt_path)
 
 
+def convert_file_to_csv(input_path: str, output_dir: str) -> Path:
+    """Convert various input formats to CSV in a chosen directory.
+
+    This is a convenience wrapper for the GUI file conversion tool. It reads
+    the ``input_path`` using pandas according to the file extension and
+    writes a ``.csv`` file inside ``output_dir``.  A log entry and a print
+    statement are emitted so that human operators can trace the action.
+    """
+    suffix = Path(input_path).suffix.lower()
+
+    if suffix == ".csv":
+        df = pd.read_csv(input_path)
+    elif suffix in {".xls", ".xlsx"}:
+        df = pd.read_excel(input_path)
+    elif suffix == ".json":
+        df = pd.read_json(input_path)
+    elif suffix in {".parquet", ".pq"}:
+        df = pd.read_parquet(input_path)
+    elif suffix == ".tsv":
+        df = pd.read_csv(input_path, sep="\t")
+    elif suffix == ".txt":
+        df = pd.read_csv(input_path, sep=r"\s+", engine="python")
+    else:
+        raise ValueError(f"Unsupported file format: {suffix}")
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / (Path(input_path).stem + ".csv")
+    df.to_csv(output_path, index=False)
+
+    logger.info("Converted %s to CSV -> %s", input_path, output_path)
+    print(f"[Data Handler] Converted {input_path} -> {output_path}")
+    return output_path
+
+
 
 def load_data(file_path):
     """Load data from various formats and convert to CSV if needed.
