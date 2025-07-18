@@ -9,6 +9,9 @@ from pathlib import Path
 import json
 import sys
 
+# Configure basic logging for the module so debug information is visible
+logging.basicConfig(level=logging.DEBUG)
+
 # Set up module level logger for debug output
 logger = logging.getLogger(__name__)
 
@@ -26,14 +29,22 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 SETTINGS_FILE = "dataScope/preferences/theme.json"
 
 def load_theme_preference():
+    """Return saved dark mode preference if it exists."""
     if os.path.exists(SETTINGS_FILE):
+        logger.debug("Loading theme preference from %s", SETTINGS_FILE)
+        print(f"[Prefs] Loading theme from {SETTINGS_FILE}")
         with open(SETTINGS_FILE, "r") as f:
             data = json.load(f)
             return data.get("dark_mode", False)
+    print("[Prefs] No stored theme preference")
+    logger.debug("Theme preference file not found; using default")
     return False
 
 #Dark Mode Save Function
 def save_theme_preference(dark_mode: bool):
+    """Persist the dark mode setting to disk."""
+    logger.debug("Saving theme preference: %s", dark_mode)
+    print(f"[Prefs] Saving theme preference -> {dark_mode}")
     with open(SETTINGS_FILE, "w") as f:
         json.dump({"dark_mode": dark_mode}, f)
 #SETTINGS!-----------------------------------------------------------------------------------------
@@ -92,12 +103,14 @@ dialog_controls = {
 }
 
 async def write_output(message: str, page: ft.Page):
+    """Append a message to the on‑screen console and stdout."""
     print(message)
     if dialog_controls["output_text_field"]:
         dialog_controls["output_text_field"].value += message + "\n"
         page.update()
 
 async def check_data_loaded(page: ft.Page):
+    """Return ``True`` if a dataset has been loaded, else log an error."""
     if not data_loaded:
         await write_output("[Error] Load data first before testing.", page)
         return False
@@ -105,6 +118,7 @@ async def check_data_loaded(page: ft.Page):
 
 # Flash the logo between grayscale and color when app_busy is True
 async def flash_logo(page: ft.Page):
+    """Animate the logo to indicate that the application is busy."""
     while True:
         await asyncio.sleep(0.5)
         logo_ref = dialog_controls.get("logo_image")
@@ -154,18 +168,21 @@ def focus_console_tab(page: ft.Page):
         page.update()
 
 async def logging_handler_test(e: ft.ControlEvent):
+    """Exercise the logging subsystem as a simple self-test."""
     page = e.page
     if not await check_data_loaded(page):
         return
     await write_output("[Logging Handler] Test complete: Logging system operational.", page)
 
 async def data_handler_test(e: ft.ControlEvent):
+    """Verify that the data handler can operate on the loaded dataset."""
     page = e.page
     if not await check_data_loaded(page):
         return
     await write_output("[Data Handler] Test complete: Data loaded and validated.", page)
 
 async def visual_analyst_test(e: ft.ControlEvent):
+    """Run the visual analyst to confirm graphs render correctly."""
     page = e.page
     if not await check_data_loaded(page):
         return
@@ -242,15 +259,19 @@ async def load_data_result(e: ft.FilePickerResultEvent):
 
 
 def handle_file_result(e: ft.FilePickerResultEvent):
+    """Update the status label after the user selects a file."""
     if e.files:
         selected_file = e.files[0].path
         dialog_controls["status_label"].value = f"Loaded: {selected_file}"
         dialog_controls["status_label"].color = ft.Colors.GREEN
 
 async def load_data_handler(e: ft.ControlEvent):
+    """Prompt the user for a file and kick off data loading."""
     page = e.page
     dialog_controls["status_label"].value = "Waiting..."
     dialog_controls["status_label"].color = ft.Colors.ORANGE
+    logger.info("User requested to load a new file")
+    print("[GUI] Prompting user to select a file")
 
     # ✅ Make sure the file_picker is set up *before* calling pick_files
     if dialog_controls["file_picker"] is None:
@@ -476,13 +497,14 @@ async def analysis_handler(e: ft.ControlEvent):
 
 # Synchronous theme toggle handler to avoid threading issues
 def on_theme_toggle(e: ft.ControlEvent):
+    """Switch between dark and light themes and persist the choice."""
     page = e.page
     dark_mode = e.control.value
     page.theme_mode = ft.ThemeMode.DARK if dark_mode else ft.ThemeMode.LIGHT
     global current_theme_mode
     current_theme_mode = page.theme_mode
 
-    save_theme_preference(dark_mode)  
+    save_theme_preference(dark_mode)
     page.update()
 
 
@@ -580,6 +602,12 @@ async def main(page: ft.Page):
     await transition_to_gui(page)
 
 async def transition_to_gui(page: ft.Page):
+    """Build the main interface once the splash screen is dismissed."""
+    # Re-fetch the logger to avoid NameError in certain execution contexts
+    global logger
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
     # 1) Fade out splash screen
     splash = dialog_controls.get("splash_container")
     if splash:
