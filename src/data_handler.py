@@ -5,16 +5,25 @@
 #----------------------------------------------------------------------
 import logging
 import pandas as pd
-from pathlib import Path   
+from pathlib import Path
 import csv
 import os
 from tqdm import tqdm
 from tabulate import tabulate
+
+logger = logging.getLogger(__name__)
 #----------------------------------------------------------------------
 def save_filepath(path):
-    '''Save the file path to a global variable for later use.'''
+    """Save the file path to a module level variable for reuse.
+
+    This helper allows other functions to easily retrieve the most
+    recent file path.  A log entry and print statement are emitted so
+    the user can trace when the path is set.
+    """
     global saved_filepath
     saved_filepath = str(path)
+    logger.info("File path saved: %s", saved_filepath)
+    print(f"[Data Handler] Saved file path -> {saved_filepath}")
 #----------------------------------------------------------------------
 def create_dataset_environment(dataset_name: str) -> dict:
     '''Create a structured directory environment for the dataset.'''
@@ -38,24 +47,67 @@ def create_dataset_environment(dataset_name: str) -> dict:
     }
 
 
+def convert_to_csv(df: pd.DataFrame, original_path: str) -> Path:
+    """Convert a DataFrame to CSV next to the original file.
 
-logger = logging.getLogger(__name__)
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Data to write out.
+    original_path : str
+        Location of the source file. The CSV will share this directory.
+
+    Returns
+    -------
+    Path
+        Path to the newly written CSV file.
+    """
+    csv_path = Path(original_path).with_suffix(".csv")
+    df.to_csv(csv_path, index=False)
+    logger.info("Converted %s to CSV -> %s", original_path, csv_path)
+    print(f"[Data Handler] Converted {original_path} -> {csv_path}")
+    return csv_path
+
+
 
 def load_data(file_path):
-    """
-    Loads a dataset and returns the DataFrame or None if it fails.
+    """Load data from various formats and convert to CSV if needed.
+
+    Parameters
+    ----------
+    file_path : str
+        Location of the dataset to load.
+
+    Returns
+    -------
+    pd.DataFrame | None
+        Loaded DataFrame or ``None`` when the operation fails.
     """
     try:
-        if file_path.endswith(".csv"):
+        suffix = Path(file_path).suffix.lower()
+        if suffix == ".csv":
             df = pd.read_csv(file_path)
-        elif file_path.endswith((".xls", ".xlsx")):
+        elif suffix in {".xls", ".xlsx"}:
             df = pd.read_excel(file_path)
+        elif suffix == ".json":
+            df = pd.read_json(file_path)
+        elif suffix in {".parquet", ".pq"}:
+            df = pd.read_parquet(file_path)
+        elif suffix == ".tsv":
+            df = pd.read_csv(file_path, sep="\t")
         else:
             raise ValueError("Unsupported file format")
 
+        if suffix != ".csv":
+            csv_path = convert_to_csv(df, file_path)
+            save_filepath(csv_path)
+        else:
+            save_filepath(file_path)
+
         return df
     except Exception as e:
-        logger.error(f"Failed to load data: {e}")
+        logger.error("Failed to load data: %s", e)
+        print(f"[Data Handler] Error loading {file_path}: {e}")
         return None
 
 
