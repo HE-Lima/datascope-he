@@ -4,6 +4,7 @@ import os
 import logging
 from data_handler import create_dataset_environment, load_data, run_analysis
 import data_handler
+from data_handler import convert_file_to_csv
 from pathlib import Path
 import json
 import sys
@@ -41,6 +42,10 @@ app_busy = False
 # Default chunk size for CSV splitting operations
 CHUNK_SIZE_DEFAULT = 256
 
+# File conversion helper variables
+convert_input_path = None
+convert_output_dir = None
+
 # Icon to represent CSV splitting. Older versions of this file referenced
 # ``ft.Icon.SPLIT_CSV_OUTLINE`` which does not exist in Flet.  We gracefully
 # fall back to ``HORIZONTAL_SPLIT_OUTLINED`` to avoid runtime errors.
@@ -60,6 +65,11 @@ dialog_controls = {
     "logo_image": None,
     "tabs": None,
     "splash_container": None,
+    "convert_status": None,
+    "convert_file_picker": None,
+    "convert_dir_picker": None,
+    "convert_file_display": None,
+    "convert_dir_display": None,
 }
 
 async def write_output(message: str, page: ft.Page):
@@ -305,6 +315,58 @@ async def on_chunk_csv(e: ft.ControlEvent):
     await handle_chunk_button(e)
 
 
+def convert_file_result(e: ft.FilePickerResultEvent):
+    """Store the file selected for conversion and update the display."""
+    global convert_input_path
+    if e.files:
+        convert_input_path = e.files[0].path
+        dialog_controls["convert_file_display"].value = convert_input_path
+    else:
+        convert_input_path = None
+        dialog_controls["convert_file_display"].value = "No file selected"
+    e.page.update()
+
+
+def convert_dir_result(e: ft.FilePickerResultEvent):
+    """Store the output directory chosen for conversion."""
+    global convert_output_dir
+    if e.path:
+        convert_output_dir = e.path
+        dialog_controls["convert_dir_display"].value = convert_output_dir
+    else:
+        convert_output_dir = None
+        dialog_controls["convert_dir_display"].value = "No folder selected"
+    e.page.update()
+
+
+async def on_convert_file(e: ft.ControlEvent):
+    """Convert the selected file to CSV and save it to the output directory."""
+    global app_busy
+    page = e.page
+
+    if not convert_input_path or not convert_output_dir:
+        dialog_controls["convert_status"].value = "Select input file and folder."
+        page.update()
+        return
+
+    dialog_controls["convert_status"].value = "Converting..."
+    app_busy = True
+    page.update()
+
+    try:
+        output_file = await asyncio.to_thread(
+            convert_file_to_csv,
+            convert_input_path,
+            convert_output_dir,
+        )
+        dialog_controls["convert_status"].value = f"Saved to {output_file}"
+    except Exception as ex:
+        dialog_controls["convert_status"].value = f"Error: {ex}"
+
+    app_busy = False
+    page.update()
+
+
 
 
 #FILE HANDLER BLOCK END----------------------------------------------------------------------------------------
@@ -403,6 +465,16 @@ async def main(page: ft.Page):
         on_result=load_data_result
     )
     page.overlay.append(dialog_controls["file_picker"])
+
+    dialog_controls["convert_file_picker"] = ft.FilePicker(
+        on_result=convert_file_result
+    )
+    page.overlay.append(dialog_controls["convert_file_picker"])
+
+    dialog_controls["convert_dir_picker"] = ft.FilePicker(
+        on_result=convert_dir_result
+    )
+    page.overlay.append(dialog_controls["convert_dir_picker"])
 
     # Theme toggle switch
     dialog_controls["theme_switch"] = ft.Switch(
@@ -606,6 +678,52 @@ async def transition_to_gui(page: ft.Page):
         ),
     )
 
+    dialog_controls["convert_status"] = ft.Text(value="", color=ft.Colors.GREY_700)
+    dialog_controls["convert_file_display"] = ft.Text("No file selected", color=ft.Colors.GREY_700)
+    dialog_controls["convert_dir_display"] = ft.Text("No folder selected", color=ft.Colors.GREY_700)
+
+    convert_card = ft.Card(
+        elevation=3,
+        content=ft.Container(
+            padding=16,
+            content=ft.Column(
+                [
+                    ft.Text("File Converter", style="headlineSmall"),
+                    ft.Row(
+                        [
+                            ft.ElevatedButton(
+                                text="Select File",
+                                icon=ft.icons.UPLOAD_FILE,
+                                on_click=lambda e: dialog_controls["convert_file_picker"].pick_files(allow_multiple=False),
+                            ),
+                            dialog_controls["convert_file_display"],
+                        ],
+                        spacing=16,
+                        alignment="start",
+                    ),
+                    ft.Row(
+                        [
+                            ft.ElevatedButton(
+                                text="Choose Folder",
+                                icon=ft.icons.FOLDER_OPEN,
+                                on_click=lambda e: dialog_controls["convert_dir_picker"].get_directory_path(),
+                            ),
+                            dialog_controls["convert_dir_display"],
+                        ],
+                        spacing=16,
+                        alignment="start",
+                    ),
+                    ft.ElevatedButton(
+                        text="Convert to CSV",
+                        icon=ft.icons.DOWNLOAD,
+                        on_click=on_convert_file,
+                    ),
+                    dialog_controls["convert_status"],
+                ]
+            ),
+        ),
+    )
+
     tabs = ft.Tabs(
         selected_index=0,
         animation_duration=200,
@@ -626,6 +744,7 @@ async def transition_to_gui(page: ft.Page):
                     ft.Text("🔧 Data Tools", style="titleMedium", color=ft.Colors.GREY_800),
                     csv_chunker_card,
                     dialog_controls["chunk_status"],
+                    convert_card,
                 ])
             ),
             ft.Tab(
