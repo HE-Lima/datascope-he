@@ -317,7 +317,7 @@ async def main(page: ft.Page):
     dark_mode_enabled = load_theme_preference()
     page.theme_mode = ft.ThemeMode.DARK if dark_mode_enabled else ft.ThemeMode.LIGHT
 
-    page.window.icon = "dataScope/assets/favicon.ico"
+    page.window.icon = "assets/favicon.ico"
 
     page.update()
 
@@ -342,7 +342,7 @@ async def main(page: ft.Page):
     splash_content = ft.Column(
         [
             ft.Text("PROPERTY OF", font_family="Helvetica", size=10, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-            ft.Image(src="dataScope/assets/protexxa-logo.png", width=156, height=61, fit=ft.ImageFit.CONTAIN,
+            ft.Image(src="assets/protexxa-logo.png", width=156, height=61, fit=ft.ImageFit.CONTAIN,
                      error_content=ft.Text("Logo not found", color=ft.Colors.RED)),
             ft.Text(
                 "13.1°N 59.32°W → 43° 39' 11.6136'' N 79° 22' 59.4624'' W\n"
@@ -382,7 +382,7 @@ async def transition_to_gui(page: ft.Page):
                 ft.Text("Protexxa Datascope - 1.2",
                         font_family="Arial", size=20, weight=ft.FontWeight.NORMAL),
                 ft.Image(
-                    src="./dataScope/assets/protexxa_logo_cropped.png",
+                    src="assets/protexxa_logo_cropped.png",
                     width=40, height=40, fit=ft.ImageFit.CONTAIN,
                     error_content=ft.Text("Logo missing", color=ft.Colors.RED)
                 )
