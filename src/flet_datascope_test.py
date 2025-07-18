@@ -35,6 +35,8 @@ def save_theme_preference(dark_mode: bool):
 
 # Global flag for checking if dataset was loaded
 data_loaded = False
+# Indicates if a long operation is running
+app_busy = False
 
 # Control references
 dialog_controls = {
@@ -47,6 +49,7 @@ dialog_controls = {
     "theme_switch": None,
     "chunk_size_input": None,
     "chunk_status": None,
+    "logo_image": None,
 }
 
 async def write_output(message: str, page: ft.Page):
@@ -60,6 +63,21 @@ async def check_data_loaded(page: ft.Page):
         await write_output("[Error] Load data first before testing.", page)
         return False
     return True
+
+# Flash the logo between grayscale and color when app_busy is True
+async def flash_logo(page: ft.Page):
+    while True:
+        await asyncio.sleep(0.5)
+        logo_ref = dialog_controls.get("logo_image")
+        logo = logo_ref.current if logo_ref else None
+        if not logo:
+            continue
+        if app_busy:
+            logo.color = None if logo.color else ft.Colors.GREY
+            logo.update()
+        elif logo.color:
+            logo.color = None
+            logo.update()
 
 async def logging_handler_test(e: ft.ControlEvent):
     page = e.page
@@ -86,9 +104,9 @@ from pathlib import Path
 #----------------------------------------------------------------------------------------------------------
 
 async def load_data_result(e: ft.FilePickerResultEvent):
-    global current_df, data_loaded
+    global current_df, data_loaded, app_busy
     page = e.page
-    
+
 
     if e.files:
         file_path = e.files[0].path
@@ -97,6 +115,9 @@ async def load_data_result(e: ft.FilePickerResultEvent):
 
         # 1. Get dataset name from file
         dataset_name = Path(file_path).stem
+
+        # Indicate busy state
+        app_busy = True
 
         # 2. Create environment folders for this dataset
         project_paths = create_dataset_environment(dataset_name)
@@ -136,12 +157,14 @@ async def load_data_result(e: ft.FilePickerResultEvent):
         dialog_controls["status_label"].value = "Ready"
         dialog_controls["status_label"].color = ft.Colors.GREEN
         dialog_controls["status_label"].weight = ft.FontWeight.BOLD
+        app_busy = False
 
     else:
         await write_output("[Load Data] No file selected.", page)
         dialog_controls["status_label"].value = "Ready"
         dialog_controls["status_label"].color = ft.Colors.RED
-        
+        app_busy = False
+
 
     page.update()
 
@@ -187,6 +210,7 @@ async def chunk_csv_handler(e: ft.ControlEvent):
         await write_output(f"[Error] Failed to chunk file: {ex}", e.page)
 
 async def handle_chunk_button(e: ft.ControlEvent):
+    global app_busy
     page = e.page
 
     file_path = data_handler.saved_filepath  # ✅ get latest saved path
@@ -206,9 +230,11 @@ async def handle_chunk_button(e: ft.ControlEvent):
         return
 
     dialog_controls["chunk_status"].value = "Chunking in progress..."
+    app_busy = True
     page.update()
 
-    result = split_into_chunks(
+    result = await asyncio.to_thread(
+        split_into_chunks,
         dataset_name,
         file_path,
         chunk_size_mb=chunk_size,
@@ -225,7 +251,8 @@ async def handle_chunk_button(e: ft.ControlEvent):
     page.update()
 
 
-    result = split_into_chunks(
+    result = await asyncio.to_thread(
+        split_into_chunks,
         dataset_name,
         save_filepath,
         chunk_size_mb=chunk_size,
@@ -239,6 +266,7 @@ async def handle_chunk_button(e: ft.ControlEvent):
     else:
         dialog_controls["chunk_status"].value = "Chunking failed. See logs."
 
+    app_busy = False
     page.update()
 
 
@@ -248,6 +276,7 @@ async def handle_chunk_button(e: ft.ControlEvent):
 #SEAN FEATURE BUILDOUT BLOCK-----------------------------------------------------------------
 
 async def analysis_handler(e: ft.ControlEvent):
+    global app_busy
     page = e.page
 
     if not data_loaded:
@@ -273,10 +302,12 @@ async def analysis_handler(e: ft.ControlEvent):
     desc = ss.value
 
     # Run the analysis on a background thread
+    app_busy = True
     result = await asyncio.to_thread(
         run_analysis, current_df, atype, col, num, desc
     )
     await write_output(result, page)
+    app_busy = False
 
 
 
@@ -320,6 +351,9 @@ async def main(page: ft.Page):
     page.window.icon = "assets/favicon.ico"
 
     page.update()
+
+    # Start background task to flash the logo when busy
+    asyncio.create_task(flash_logo(page))
 
 
 
@@ -376,21 +410,32 @@ async def transition_to_gui(page: ft.Page):
     page.update()
 
     # 2) Header
+    logo_ref = ft.Ref[ft.Image]()
+    logo_img = ft.Image(
+        src="assets/protexxa_logo_cropped.png",
+        width=40,
+        height=40,
+        fit=ft.ImageFit.CONTAIN,
+        error_content=ft.Text("Logo missing", color=ft.Colors.RED),
+        ref=logo_ref,
+    )
     header = ft.WindowDragArea(
         content=ft.Row(
             controls=[
-                ft.Text("Protexxa Datascope - 1.2",
-                        font_family="Arial", size=20, weight=ft.FontWeight.NORMAL),
-                ft.Image(
-                    src="assets/protexxa_logo_cropped.png",
-                    width=40, height=40, fit=ft.ImageFit.CONTAIN,
-                    error_content=ft.Text("Logo missing", color=ft.Colors.RED)
-                )
+                ft.Text(
+                    "Protexxa Datascope - 1.2",
+                    font_family="Arial",
+                    size=20,
+                    weight=ft.FontWeight.NORMAL,
+                ),
+                logo_img,
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             width=800,
         )
     )
+
+    dialog_controls["logo_image"] = logo_ref
 
     # 3) Console & File‑ops UI (must come before Tabs)
     dialog_controls["output_text_field"] = ft.TextField(
