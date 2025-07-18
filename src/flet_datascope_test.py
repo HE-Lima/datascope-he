@@ -16,7 +16,13 @@ dialog_controls = {
     "status_label": None,
     "file_picker": None,
     "theme_switch": None,
+    "progress_ring": None,
 }
+
+def toggle_progress(page: ft.Page, visible: bool):
+    if dialog_controls.get("progress_ring"):
+        dialog_controls["progress_ring"].visible = visible
+        page.update()
 
 async def write_output(message: str, page: ft.Page):
     print(message)
@@ -34,19 +40,25 @@ async def logging_handler_test(e: ft.ControlEvent):
     page = e.page
     if not await check_data_loaded(page):
         return
+    toggle_progress(page, True)
     await write_output("[Logging Handler] Test complete: Logging system operational.", page)
+    toggle_progress(page, False)
 
 async def data_handler_test(e: ft.ControlEvent):
     page = e.page
     if not await check_data_loaded(page):
         return
+    toggle_progress(page, True)
     await write_output("[Data Handler] Test complete: Data loaded and validated.", page)
+    toggle_progress(page, False)
 
 async def visual_analyst_test(e: ft.ControlEvent):
     page = e.page
     if not await check_data_loaded(page):
         return
+    toggle_progress(page, True)
     await write_output("[Visual Analyst] Test complete: Visualizations generated.", page)
+    toggle_progress(page, False)
 
 # FILE HANDLER BLOCK -------------------------------------------------------------
 from data_handler import saved_filepath
@@ -57,6 +69,7 @@ async def load_data_result(e: ft.FilePickerResultEvent):
     global data_loaded
 
     if e.files:
+        toggle_progress(page, True)
         file_path = e.files[0].path
         await write_output(f"[Load Data] File selected: {file_path}", page)
 
@@ -89,11 +102,13 @@ async def load_data_result(e: ft.FilePickerResultEvent):
         dialog_controls["status_label"].value = "Ready"
         dialog_controls["status_label"].color = ft.Colors.BLUE
 
+    toggle_progress(page, False)
     page.update()
 
 
 async def load_data_handler(e: ft.ControlEvent):
     page = e.page
+    toggle_progress(page, True)
     dialog_controls["status_label"].value = "Processing..."
     dialog_controls["status_label"].color = ft.Colors.ORANGE
     dialog_controls["file_picker"].pick_files(allow_multiple=False, allowed_extensions=["csv", "xlsx", "xls"])
@@ -248,6 +263,7 @@ async def transition_to_gui(page: ft.Page):
 
     # Status bar
     dialog_controls["status_label"] = ft.Text("Ready", color=ft.Colors.BLUE)
+    dialog_controls["progress_ring"] = ft.ProgressRing(visible=False)
 
     # Assemble GUI
     page.add(
@@ -257,6 +273,7 @@ async def transition_to_gui(page: ft.Page):
                 dialog_controls["output_text_field"],
                 button_row,
                 file_ops_frame,
+                dialog_controls["progress_ring"],
                 dialog_controls["status_label"],
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
