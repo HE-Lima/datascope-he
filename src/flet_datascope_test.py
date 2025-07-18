@@ -9,6 +9,9 @@ from pathlib import Path
 import json
 import sys
 
+# Set up module level logger for debug output
+logger = logging.getLogger(__name__)
+
 # Global variable to store the DF (SEAN FEATURE BUILDOUT)
 current_df = None
 
@@ -80,6 +83,8 @@ dialog_controls = {
     "convert_dir_picker": None,
     "convert_file_display": None,
     "convert_dir_display": None,
+    "progress_bar": None,
+    "progress_text": None,
 }
 
 async def write_output(message: str, page: ft.Page):
@@ -108,6 +113,34 @@ async def flash_logo(page: ft.Page):
         elif logo.color:
             logo.color = None
             logo.update()
+
+async def update_progress(progress: float, message: str, page: ft.Page):
+    """Update the progress bar and text indicator.
+
+    Logging and print statements help trace the progress updates for
+    easier debugging while the application runs.
+    """
+    logger.info("Progress %s%% - %s", progress, message)
+    print(f"[Progress] {message} ({progress:.0f}%)")
+    bar = dialog_controls.get("progress_bar")
+    text = dialog_controls.get("progress_text")
+    if bar and text:
+        bar.value = progress / 100.0
+        text.value = f"{message} ({progress:.0f}%)"
+        page.update()
+
+
+async def show_progress(show: bool, page: ft.Page):
+    """Toggle visibility of progress widgets."""
+    state = "Showing" if show else "Hiding"
+    logger.info("%s progress bar", state)
+    print(f"[Progress] {state} progress bar")
+    bar = dialog_controls.get("progress_bar")
+    text = dialog_controls.get("progress_text")
+    if bar and text:
+        bar.visible = show
+        text.visible = show
+        page.update()
 
 def focus_console_tab(page: ft.Page):
     """Switch to the Console tab if the tab control exists."""
@@ -141,52 +174,49 @@ from pathlib import Path
 #----------------------------------------------------------------------------------------------------------
 
 async def load_data_result(e: ft.FilePickerResultEvent):
-    global current_df, data_loaded, app_busy
+    """Handle the file picker result and load data with progress updates."""
+    global current_df, data_loaded
     page = e.page
-
 
     if e.files:
         file_path = e.files[0].path
-        save_filepath(file_path)           # ← store the real string path
+        save_filepath(file_path)
         dialog_controls["loaded_file"] = file_path
 
-        # 1. Get dataset name from file
         dataset_name = Path(file_path).stem
 
-        # Indicate busy state
-        app_busy = True
+        # Show progress bar
+        await show_progress(True, page)
+        await update_progress(10, "Creating environment folders...", page)
 
-        # 2. Create environment folders for this dataset
         project_paths = create_dataset_environment(dataset_name)
         await write_output(f"[Environment] Folders created at: {project_paths['project']}", page)
 
-        # 3. Show status
         dialog_controls["status_label"].value = "Loading large file..."
         dialog_controls["status_label"].color = ft.Colors.AMBER
+        await update_progress(30, "Preparing to load data...", page)
         page.update()
         await asyncio.sleep(0.1)
 
-        # 4. Load the data in background
+        await update_progress(50, "Loading data file...", page)
         df = await asyncio.to_thread(load_data, file_path)
         current_df = df
 
-        # in load_data_result, right after `current_df = df`
-            # after current_df = df
+        await update_progress(70, "Processing column information...", page)
         cd = dialog_controls["column_dropdown"]
         cd.options = [ft.dropdown.Option("All Columns")] + [
             ft.dropdown.Option(c) for c in current_df.columns
         ]
-        cd.value = "All Columns"   # reset selection
+        cd.value = "All Columns"
         page.update()
 
-
-
-
+        await update_progress(85, "Calculating data statistics...", page)
         info = get_data_stats(df, file_path)
         await write_output(info["log1"], page)
         await write_output(info["log2"], page)
 
-        # 4. Toggle buttons now that loading succeeded
+        await update_progress(100, "Loading complete!", page)
+
         data_loaded = True
         dialog_controls["btn_log"].disabled = False
         dialog_controls["btn_data"].disabled = False
@@ -194,14 +224,15 @@ async def load_data_result(e: ft.FilePickerResultEvent):
         dialog_controls["status_label"].value = "Ready"
         dialog_controls["status_label"].color = ft.Colors.GREEN
         dialog_controls["status_label"].weight = ft.FontWeight.BOLD
-        app_busy = False
+
+        await asyncio.sleep(1)
+        await show_progress(False, page)
 
     else:
         await write_output("[Load Data] No file selected.", page)
         dialog_controls["status_label"].value = "Ready"
         dialog_controls["status_label"].color = ft.Colors.RED
-        app_busy = False
-
+        await show_progress(False, page)
 
     page.update()
 
@@ -229,25 +260,35 @@ async def load_data_handler(e: ft.ControlEvent):
     )
 
 async def chunk_csv_handler(e: ft.ControlEvent):
-
-
+    """Chunk the currently loaded CSV file with progress feedback."""
     try:
         if not save_filepath:
             await write_output("[Error] No file loaded to chunk.", e.page)
             return
+
+        await show_progress(True, e.page)
+        await update_progress(10, "Preparing to chunk file...", e.page)
 
         dataset_name = Path(save_filepath).stem
         paths = create_dataset_environment(dataset_name)
         chunks_dir = str(paths["chunks"])
 
         await write_output(f"[GUI] Chunking started: {save_filepath}", e.page)
+        await update_progress(30, "Starting file chunking...", e.page)
 
-        split_into_chunks(save_filepath, chunks_dir, chunk_size_mb=256)
+        await asyncio.to_thread(split_into_chunks, save_filepath, chunks_dir, chunk_size_mb=256)
 
+        await update_progress(90, "Finalizing chunks...", e.page)
         await write_output(f"[GUI] ✅ Chunking complete. Files saved in:\n{chunks_dir}", e.page)
+
+        await update_progress(100, "Chunking complete!", e.page)
+
+        await asyncio.sleep(1)
+        await show_progress(False, e.page)
 
     except Exception as ex:
         await write_output(f"[Error] Failed to chunk file: {ex}", e.page)
+        await show_progress(False, e.page)
 
 async def handle_chunk_button(e: ft.ControlEvent):
     """Handle the click event for the CSV chunking button.
@@ -383,39 +424,46 @@ async def on_convert_file(e: ft.ControlEvent):
 #SEAN FEATURE BUILDOUT BLOCK-----------------------------------------------------------------
 
 async def analysis_handler(e: ft.ControlEvent):
-    global app_busy
+    """Execute the selected analysis with progress updates."""
     page = e.page
 
     if not data_loaded:
         await write_output("[Error] Load data first.", page)
         return
 
-    # Pull the widgets out of dialog_controls
+    await show_progress(True, page)
+    await update_progress(10, "Preparing analysis...", page)
+
     ad = dialog_controls["analysis_dropdown"]
     cd = dialog_controls["column_dropdown"]
     ri = dialog_controls["rows_input"]
     ss = dialog_controls["sort_switch"]
 
-    # Read their values
     atype = ad.value
-    col   = cd.value if cd.value != "All Columns" else None
+    col = cd.value if cd.value != "All Columns" else None
 
     try:
         num = int(ri.value)
     except ValueError:
         await write_output("[Error] Rows must be an integer.", page)
+        await show_progress(False, page)
         return
 
     desc = ss.value
 
-    # Run the analysis on a background thread
-    app_busy = True
+    await update_progress(50, f"Running {atype} analysis...", page)
+
     result = await asyncio.to_thread(
         run_analysis, current_df, atype, col, num, desc
     )
+
+    await update_progress(90, "Processing results...", page)
     await write_output(result, page)
-    app_busy = False
-    focus_console_tab(page)
+
+    await update_progress(100, "Analysis complete!", page)
+
+    await asyncio.sleep(1)
+    await show_progress(False, page)
 
 
 
@@ -574,6 +622,24 @@ async def transition_to_gui(page: ft.Page):
         multiline=True, read_only=True, min_lines=20, max_lines=20,
         width=700, height=300, border_radius=20,
         border_color=ft.Colors.BLUE_GREY_200, content_padding=10, value=""
+    )
+
+    # Progress bar widgets hidden by default
+    dialog_controls["progress_bar"] = ft.ProgressBar(
+        width=700,
+        height=10,
+        bgcolor=ft.Colors.GREY_300,
+        color=ft.Colors.BLUE,
+        value=0,
+        visible=False,
+    )
+    dialog_controls["progress_text"] = ft.Text(
+        value="",
+        size=12,
+        color=ft.Colors.BLUE,
+        text_align=ft.TextAlign.CENTER,
+        visible=False,
+        weight=ft.FontWeight.BOLD,
     )
 
     # load / test buttons
@@ -743,6 +809,8 @@ async def transition_to_gui(page: ft.Page):
                 text="Console",
                 content=ft.Column([
                     dialog_controls["output_text_field"],
+                    dialog_controls["progress_bar"],
+                    dialog_controls["progress_text"],
                     button_row,
                     file_ops_frame,
                     dialog_controls["status_label"],
@@ -752,10 +820,19 @@ async def transition_to_gui(page: ft.Page):
                 text="Data Tools",
                 content=ft.Column([
                     ft.Text("🔧 Data Tools", style="titleMedium", color=ft.Colors.GREY_800),
-                    csv_chunker_card,
-                    dialog_controls["chunk_status"],
-                    convert_card,
-                ])
+                    ft.ElevatedButton(
+                        text="🔪 Chunk CSV",
+                        icon=ICONS.CONTENT_CUT,
+                        on_click=chunk_csv_handler,
+                    ),
+                    ft.Text(
+                        "Splits the currently loaded CSV into 256MB chunks.",
+                        size=12,
+                        italic=True,
+                        color=ft.Colors.GREY_600,
+                    ),
+                    dialog_controls["status_label"],
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=20)
             ),
             ft.Tab(
                 text="Advanced tools",
