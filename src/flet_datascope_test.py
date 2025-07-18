@@ -41,6 +41,11 @@ app_busy = False
 # Default chunk size for CSV splitting operations
 CHUNK_SIZE_DEFAULT = 256
 
+# Icon to represent CSV splitting. Older versions of this file referenced
+# ``ft.Icon.SPLIT_CSV_OUTLINE`` which does not exist in Flet.  We gracefully
+# fall back to ``HORIZONTAL_SPLIT_OUTLINED`` to avoid runtime errors.
+SPLIT_CSV_ICON = getattr(ft.Icons, "SPLIT_CSV_OUTLINE", ft.Icons.HORIZONTAL_SPLIT_OUTLINED)
+
 # Control references
 dialog_controls = {
     "output_text_field": None,
@@ -586,7 +591,7 @@ async def transition_to_gui(page: ft.Page):
                             dialog_controls["chunk_size_input"],
                             ft.ElevatedButton(
                                 text="Chunk CSV",
-                                icon=ft.Icons.HORIZONTAL_SPLIT_OUTLINED,
+                                icon=SPLIT_CSV_ICON,
                                 on_click=on_chunk_csv,
                             ),
                         ],
