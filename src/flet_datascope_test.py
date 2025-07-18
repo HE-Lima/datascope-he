@@ -50,6 +50,7 @@ dialog_controls = {
     "chunk_size_input": None,
     "chunk_status": None,
     "logo_image": None,
+    "tabs": None,
 }
 
 async def write_output(message: str, page: ft.Page):
@@ -78,6 +79,13 @@ async def flash_logo(page: ft.Page):
         elif logo.color:
             logo.color = None
             logo.update()
+
+def focus_console_tab(page: ft.Page):
+    """Switch to the Console tab if the tab control exists."""
+    tabs = dialog_controls.get("tabs")
+    if tabs:
+        tabs.selected_index = 0
+        page.update()
 
 async def logging_handler_test(e: ft.ControlEvent):
     page = e.page
@@ -308,6 +316,7 @@ async def analysis_handler(e: ft.ControlEvent):
     )
     await write_output(result, page)
     app_busy = False
+    focus_console_tab(page)
 
 
 
@@ -498,7 +507,8 @@ async def transition_to_gui(page: ft.Page):
             ft.dropdown.Option("Duplicate Detection"),
             ft.dropdown.Option("Placeholder Detection"),
             ft.dropdown.Option("Special Character Analysis"),
-        ]
+        ],
+        on_change=lambda e: focus_console_tab(e.page)
     )
     column_dropdown = ft.Dropdown(
         label="Column",
@@ -566,6 +576,7 @@ async def transition_to_gui(page: ft.Page):
             )
         ]
     )
+    dialog_controls["tabs"] = tabs
 
 
     # 6) Render
