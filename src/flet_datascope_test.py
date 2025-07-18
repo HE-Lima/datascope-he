@@ -34,17 +34,21 @@ dialog_controls: dict[str, ft.Control | None] = {
     "theme_switch": None,
     "chunk_size_input": None,
     "chunk_status": None,
+    "progress_ring": None,
 }
+
+def toggle_progress(page: ft.Page, visible: bool):
+    if dialog_controls.get("progress_ring"):
+        dialog_controls["progress_ring"].visible = visible
+        page.update()
 
 # Ensure repo directory is on the path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 
 # ---------------------------------------------------------------------------
 # Theme preference helpers
 # ---------------------------------------------------------------------------
 SETTINGS_FILE = "dataScope/preferences/theme.json"
-
 
 def load_theme_preference() -> bool:
     if os.path.exists(SETTINGS_FILE):
@@ -53,12 +57,10 @@ def load_theme_preference() -> bool:
             return data.get("dark_mode", False)
     return False
 
-
 def save_theme_preference(dark_mode: bool) -> None:
     Path(SETTINGS_FILE).parent.mkdir(parents=True, exist_ok=True)
     with open(SETTINGS_FILE, "w") as f:
         json.dump({"dark_mode": dark_mode}, f)
-
 
 # ---------------------------------------------------------------------------
 # Utility helpers
@@ -69,6 +71,7 @@ async def write_output(message: str, page: ft.Page) -> None:
     if isinstance(tf, ft.TextField):
         tf.value += message + "\n"
         page.update()
+
 
 
 def _enable_test_buttons(enabled: bool) -> None:
@@ -91,21 +94,27 @@ async def logging_handler_test(e: ft.ControlEvent):
     page = e.page
     if not await check_data_loaded(page):
         return
+    toggle_progress(page, True)
     await write_output("[Logging Handler] Test complete: Logging system operational.", page)
+    toggle_progress(page, False)
 
 
 async def data_handler_test(e: ft.ControlEvent):
     page = e.page
     if not await check_data_loaded(page):
         return
+    toggle_progress(page, True)
     await write_output("[Data Handler] Test complete: Data loaded and validated.", page)
+    toggle_progress(page, False)
 
 
 async def visual_analyst_test(e: ft.ControlEvent):
     page = e.page
     if not await check_data_loaded(page):
         return
+    toggle_progress(page, True)
     await write_output("[Visual Analyst] Test complete: Visualizations generated.", page)
+    toggle_progress(page, False)
 
 # ---------------------------------------------------------------------------
 # Data loading and chunking
@@ -114,12 +123,47 @@ async def load_data_result(e: ft.FilePickerResultEvent):
     global current_df, data_loaded
     page = e.page
 
-    if not e.files:
+    if e.files:
+        toggle_progress(page, True)
+        file_path = e.files[0].path
+        await write_output(f"[Load Data] File selected: {file_path}", page)
+
+        # 1. Get dataset name from file
+        dataset_name = Path(file_path).stem
+
+        # 2. Create environment folders for this dataset
+        project_paths = create_dataset_environment(dataset_name)
+        await write_output(f"[Environment] Folders created at: {project_paths['project']}", page)
+
+        # 3. Load the dataset
+        df = load_data(file_path)
+        if df is None:
+            await write_output("[Error] Failed to load dataset. Please check the file format.", page)
+            dialog_controls["status_label"].value = "Ready"
+            dialog_controls["status_label"].color = ft.Colors.RED
+            toggle_progress(page, False)
+            page.update()
+            return
+
+        await write_output(f"[Data Handler] Loaded {len(df)} rows.", page)
+        file_size = os.path.getsize(file_path)
+        await write_output(f"[Data Handler] File size: {file_size / (1024 * 1024):.2f} MB", page)
+
+        # 4. Toggle buttons now that loading succeeded
+        data_loaded = True
+        dialog_controls["btn_log"].disabled = False
+        dialog_controls["btn_data"].disabled = False
+        dialog_controls["btn_visual"].disabled = False
+        dialog_controls["status_label"].value = "Ready"
+        dialog_controls["status_label"].color = ft.Colors.BLUE
+    else:
         await write_output("[Load Data] No file selected.", page)
         dialog_controls["status_label"].value = "Ready"
         dialog_controls["status_label"].color = ft.Colors.RED
+        toggle_progress(page, False)
         page.update()
         return
+
 
     file_path = e.files[0].path
     save_filepath(file_path)
@@ -131,6 +175,8 @@ async def load_data_result(e: ft.FilePickerResultEvent):
 
     dialog_controls["status_label"].value = "Loading large file..."
     dialog_controls["status_label"].color = ft.Colors.AMBER
+    toggle_progress(page, False)
+
     page.update()
     await asyncio.sleep(0.1)
 
@@ -164,7 +210,8 @@ def handle_file_result(e: ft.FilePickerResultEvent):
 
 async def load_data_handler(e: ft.ControlEvent):
     page = e.page
-    dialog_controls["status_label"].value = "Waiting..."
+    toggle_progress(page, True)
+    dialog_controls["status_label"].value = "Processing..."
     dialog_controls["status_label"].color = ft.Colors.ORANGE
 
     if dialog_controls["file_picker"] is None:
@@ -400,6 +447,7 @@ async def transition_to_gui(page: ft.Page):
     )
 
     dialog_controls["status_label"] = ft.Text("Ready", color=ft.Colors.BLUE)
+    dialog_controls["progress_ring"] = ft.ProgressRing(visible=False)
 
     analysis_dropdown = ft.Dropdown(
         label="Analysis Type",
@@ -416,6 +464,23 @@ async def transition_to_gui(page: ft.Page):
         label="Column",
         width=200,
         options=[ft.dropdown.Option("All Columns")],
+    )
+
+    # Assemble GUI
+    page.add(
+        ft.Column(
+            [
+                header,
+                dialog_controls["output_text_field"],
+                button_row,
+                file_ops_frame,
+                dialog_controls["progress_ring"],
+                dialog_controls["status_label"],
+            ],
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=10,
+            expand=True,
+        )
     )
     rows_input = ft.TextField(label="Rows to show", value="10", width=100)
     sort_switch = ft.Switch(label="Descending order", value=False)
