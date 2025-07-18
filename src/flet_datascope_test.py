@@ -65,6 +65,8 @@ ICONS = get_icons_module()
 SPLIT_CSV_ICON = getattr(ICONS, "SPLIT_CSV_OUTLINE", ICONS.HORIZONTAL_SPLIT_OUTLINED)
 
 # Control references
+# A central registry for widget references so handlers can easily
+# access and update controls from anywhere in the app.
 dialog_controls = {
     "output_text_field": None,
     "btn_log": None,
@@ -83,6 +85,8 @@ dialog_controls = {
     "convert_dir_picker": None,
     "convert_file_display": None,
     "convert_dir_display": None,
+    # Progress indicators are created in ``transition_to_gui`` and start off
+    # hidden until an operation requires them.
     "progress_bar": None,
     "progress_text": None,
 }
@@ -115,10 +119,10 @@ async def flash_logo(page: ft.Page):
             logo.update()
 
 async def update_progress(progress: float, message: str, page: ft.Page):
-    """Update the progress bar and text indicator.
+    """Update progress bar and label with the given values.
 
-    Logging and print statements help trace the progress updates for
-    easier debugging while the application runs.
+    This helper centralises how progress feedback is shown to the user
+    and logs each update for easier troubleshooting.
     """
     logger.info("Progress %s%% - %s", progress, message)
     print(f"[Progress] {message} ({progress:.0f}%)")
@@ -131,7 +135,7 @@ async def update_progress(progress: float, message: str, page: ft.Page):
 
 
 async def show_progress(show: bool, page: ft.Page):
-    """Toggle visibility of progress widgets."""
+    """Show or hide the progress widgets and log the change."""
     state = "Showing" if show else "Hiding"
     logger.info("%s progress bar", state)
     print(f"[Progress] {state} progress bar")
@@ -641,6 +645,8 @@ async def transition_to_gui(page: ft.Page):
         visible=False,
         weight=ft.FontWeight.BOLD,
     )
+    logger.debug("Progress widgets created and stored in dialog_controls")
+    print("[Setup] Progress widgets ready")
 
     # load / test buttons
     btn_load = ft.ElevatedButton(
