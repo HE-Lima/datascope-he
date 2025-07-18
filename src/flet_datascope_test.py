@@ -10,6 +10,7 @@ import json
 import sys
 
 # Set up module level logger for debug output
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Global variable to store the DF (SEAN FEATURE BUILDOUT)
