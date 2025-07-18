@@ -222,6 +222,11 @@ async def chunk_csv_handler(e: ft.ControlEvent):
         await write_output(f"[Error] Failed to chunk file: {ex}", e.page)
 
 async def handle_chunk_button(e: ft.ControlEvent):
+    """Handle the click event for the CSV chunking button.
+
+    This routine validates the input, spawns the CSV splitting process on
+    a background thread and updates the UI with progress information.
+    """
     global app_busy
     page = e.page
 
@@ -581,7 +586,7 @@ async def transition_to_gui(page: ft.Page):
                             dialog_controls["chunk_size_input"],
                             ft.ElevatedButton(
                                 text="Chunk CSV",
-                                icon=ft.icons.SPLIT_CSV_OUTLINE,
+                                icon=ft.Icons.HORIZONTAL_SPLIT_OUTLINED,
                                 on_click=on_chunk_csv,
                             ),
                         ],
