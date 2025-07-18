@@ -1,6 +1,7 @@
 import flet as ft
 import asyncio
 import os
+import logging
 from data_handler import create_dataset_environment, load_data, run_analysis
 import data_handler
 from pathlib import Path
@@ -37,6 +38,8 @@ def save_theme_preference(dark_mode: bool):
 data_loaded = False
 # Indicates if a long operation is running
 app_busy = False
+# Default chunk size for CSV splitting operations
+CHUNK_SIZE_DEFAULT = 256
 
 # Control references
 dialog_controls = {
@@ -279,6 +282,16 @@ async def handle_chunk_button(e: ft.ControlEvent):
     page.update()
 
 
+async def on_chunk_csv(e: ft.ControlEvent):
+    """Launch CSV chunking using the size stored on the page object."""
+    page = e.page
+    chunk_size = getattr(page, "chunk_size", CHUNK_SIZE_DEFAULT)
+    dialog_controls["chunk_size_input"].value = str(chunk_size)
+    print(f"[GUI] Chunk CSV requested with {chunk_size} MB")
+    logging.info("Chunk CSV requested with %s MB", chunk_size)
+    await handle_chunk_button(e)
+
+
 
 
 #FILE HANDLER BLOCK END----------------------------------------------------------------------------------------
@@ -337,6 +350,7 @@ def on_theme_toggle(e: ft.ControlEvent):
 
 
 async def main(page: ft.Page):
+    """Primary entry point for the Flet UI."""
     global data_loaded
 
     # Window appearance and behavior
@@ -359,6 +373,9 @@ async def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.DARK if dark_mode_enabled else ft.ThemeMode.LIGHT
 
     page.window.icon = "assets/favicon.ico"
+
+    # Default chunk size stored on page for reuse in handlers
+    page.chunk_size = CHUNK_SIZE_DEFAULT
 
     page.update()
 
@@ -544,8 +561,37 @@ async def transition_to_gui(page: ft.Page):
     ], spacing=10, alignment=ft.MainAxisAlignment.START)
 
     # 5) Build Tabs in one shot
-    dialog_controls["chunk_size_input"] = ft.TextField(label="Chunk size (MB)", value="256", width=200)
+    dialog_controls["chunk_size_input"] = ft.TextField(
+        label="Chunk size (MB)",
+        width=200,
+        value=str(page.chunk_size),
+        on_change=lambda e: setattr(page, "chunk_size", int(e.control.value))
+    )
     dialog_controls["chunk_status"] = ft.Text(value="", color=ft.Colors.GREY_700)
+
+    csv_chunker_card = ft.Card(
+        elevation=3,
+        content=ft.Container(
+            padding=16,
+            content=ft.Column(
+                [
+                    ft.Text("CSV Chunker", style="headlineSmall"),
+                    ft.Row(
+                        [
+                            dialog_controls["chunk_size_input"],
+                            ft.ElevatedButton(
+                                text="Chunk CSV",
+                                icon=ft.icons.SPLIT_CSV_OUTLINE,
+                                on_click=on_chunk_csv,
+                            ),
+                        ],
+                        spacing=16,
+                        alignment="start",
+                    ),
+                ]
+            ),
+        ),
+    )
 
     tabs = ft.Tabs(
         selected_index=0,
@@ -565,12 +611,7 @@ async def transition_to_gui(page: ft.Page):
                 text="Data Tools",
                 content=ft.Column([
                     ft.Text("🔧 Data Tools", style="titleMedium", color=ft.Colors.GREY_800),
-                    dialog_controls["chunk_size_input"],
-                    ft.ElevatedButton(
-                        text="Chunk CSV",
-                        icon=ft.Icons.CONTENT_CUT,
-                        on_click=handle_chunk_button
-                    ),
+                    csv_chunker_card,
                     dialog_controls["chunk_status"],
                 ])
             ),
