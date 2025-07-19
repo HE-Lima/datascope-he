@@ -89,15 +89,35 @@ def convert_txt_to_csv(txt_path: str) -> Path:
     return convert_to_csv(df, txt_path)
 
 
-def convert_file_to_csv(input_path: str, output_dir: str) -> Path:
-    """Convert various input formats to CSV in a chosen directory.
+def convert_file(
+    input_path: str,
+    output_dir: str,
+    target_format: str = "csv",
+    progress_fn=None,
+) -> Path:
+    """Convert an input file to CSV or Excel.
 
-    This is a convenience wrapper for the GUI file conversion tool. It reads
-    the ``input_path`` using pandas according to the file extension and
-    writes a ``.csv`` file inside ``output_dir``.  A log entry and a print
-    statement are emitted so that human operators can trace the action.
+    Parameters
+    ----------
+    input_path : str
+        Path to the source data file.
+    output_dir : str
+        Directory where the converted file should be written.
+    target_format : str, optional
+        Either ``"csv"`` or ``"xlsx"``. Defaults to ``"csv"``.
+    progress_fn : callable, optional
+        Callback receiving ``(percent, message)`` for UI updates.
+
+    Returns
+    -------
+    Path
+        Location of the newly created file.
     """
+
     suffix = Path(input_path).suffix.lower()
+
+    if progress_fn:
+        progress_fn(0, "Reading input")
 
     if suffix == ".csv":
         df = pd.read_csv(input_path)
@@ -114,18 +134,37 @@ def convert_file_to_csv(input_path: str, output_dir: str) -> Path:
     else:
         raise ValueError(f"Unsupported file format: {suffix}")
 
+    if progress_fn:
+        progress_fn(50, "Writing output")
+
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / (Path(input_path).stem + ".csv")
-    df.to_csv(output_path, index=False)
+    output_path = output_dir / (Path(input_path).stem + f".{target_format}")
 
-    logger.info("Converted %s to CSV -> %s", input_path, output_path)
+    if target_format == "csv":
+        df.to_csv(output_path, index=False)
+    elif target_format == "xlsx":
+        df.to_excel(output_path, index=False)
+    else:
+        raise ValueError("target_format must be 'csv' or 'xlsx'")
+
+    if progress_fn:
+        progress_fn(100, "Conversion complete")
+
+    logger.info(
+        "Converted %s to %s -> %s", input_path, target_format.upper(), output_path
+    )
     print(f"[Data Handler] Converted {input_path} -> {output_path}")
     return output_path
 
 
-def load_data(file_path, progress_fn=None):
-    """Load a dataset and emit incremental progress notifications.
+def load_data(
+    file_path: str,
+    progress_fn=None,
+    encoding: str = "utf-8",
+    delimiter: str | None = None,
+):
+    """Load a dataset with optional encoding and delimiter control.
 
     Parameters
     ----------
@@ -133,6 +172,11 @@ def load_data(file_path, progress_fn=None):
         Location of the dataset to load.
     progress_fn : callable, optional
         Callback accepting ``(percent, message)`` for UI updates.
+    encoding : str, optional
+        Text encoding to use when reading text based formats.
+    delimiter : str | None, optional
+        Specific delimiter to use when reading CSV or TXT. When ``None`` the
+        function attempts auto-detection for text formats.
 
     Returns
     -------
@@ -159,15 +203,25 @@ def load_data(file_path, progress_fn=None):
             # lines to determine the total number of rows.  Progress is then
             # calculated from the proportion of processed rows.
             # ------------------------------------------------------------------
-            total_rows = sum(1 for _ in open(file_path, "r", encoding="utf-8"))
+            total_rows = sum(1 for _ in open(file_path, "r", encoding=encoding))
             logger.info("Total rows detected: %s", total_rows)
             print(f"[Data Handler] Total rows detected: {total_rows}")
 
-            sep = "," if suffix == ".csv" else "\t" if suffix == ".tsv" else r"\s+"
+            if delimiter is None:
+                with open(file_path, "r", encoding=encoding) as f:
+                    sample = f.read(1024)
+                try:
+                    dialect = csv.Sniffer().sniff(sample)
+                    sep = dialect.delimiter
+                except csv.Error:
+                    sep = "," if suffix == ".csv" else "\t" if suffix == ".tsv" else r"\s+"
+            else:
+                sep = delimiter
             reader = pd.read_csv(
                 file_path,
                 sep=sep,
                 chunksize=10000,
+                encoding=encoding,
                 engine="python" if suffix == ".txt" else "c",
             )
 
@@ -487,3 +541,77 @@ def run_analysis(
         )
 
     return f"[Notice] {analysis_type} not recognized."
+
+
+def search_dataframe(
+    df: pd.DataFrame,
+    term: str,
+    column: str | None = None,
+    case: bool = False,
+    whole: bool = False,
+) -> list[int]:
+    """Return indices of rows containing ``term``.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame to search.
+    term : str
+        Search term.
+    column : str | None, optional
+        Specific column to search within. ``None`` searches all columns.
+    case : bool, optional
+        Perform case-sensitive matching.
+    whole : bool, optional
+        Match whole words only when ``True``.
+
+    Returns
+    -------
+    list[int]
+        List of row indices with matches.
+    """
+
+    if column and column in df.columns:
+        data = df[[column]]
+    else:
+        data = df
+
+    pattern = rf"\b{term}\b" if whole else term
+    mask = data.apply(
+        lambda s: s.astype(str).str.contains(pattern, case=case, regex=True)
+    ).any(axis=1)
+    matches = mask[mask].index.tolist()
+
+    logger.info(
+        "Search performed: term=%s column=%s matches=%s",
+        term,
+        column or "ALL",
+        len(matches),
+    )
+    print(
+        f"[Data Handler] Search term='{term}' column='{column or 'ALL'}' -> {len(matches)} matches"
+    )
+    return matches
+
+
+def export_dataframe(df: pd.DataFrame, path: str, fmt: str = "csv") -> Path:
+    """Export a DataFrame to CSV or Excel."""
+    out_path = Path(path)
+    if fmt == "csv":
+        df.to_csv(out_path, index=False)
+    elif fmt == "xlsx":
+        df.to_excel(out_path, index=False)
+    else:
+        raise ValueError("fmt must be 'csv' or 'xlsx'")
+    logger.info("Exported DataFrame to %s", out_path)
+    print(f"[Data Handler] Exported DataFrame -> {out_path}")
+    return out_path
+
+
+def export_text(text: str, path: str) -> Path:
+    """Write text to ``path`` using UTF-8 encoding."""
+    out_path = Path(path)
+    out_path.write_text(text, encoding="utf-8")
+    logger.info("Exported text to %s", out_path)
+    print(f"[Data Handler] Exported text -> {out_path}")
+    return out_path
