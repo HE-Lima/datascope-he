@@ -742,7 +742,7 @@ async def main(page: ft.Page):
 
     # Window size
     page.window.width = 700
-    page.window.height = 600
+    page.window.height = 640
 
     # Center the window on screen
     page.window.center()
