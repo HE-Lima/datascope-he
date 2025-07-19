@@ -18,21 +18,38 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 
 # SETTINGS!-----------------------------------------------------------------------------------------
-SETTINGS_FILE = "dataScope/preferences/theme.json"
+# Directory under the user's home folder for storing preferences.
+# Using the home directory ensures the path is writable even when the
+# application is packaged as an executable.
+PREFERENCES_DIR = Path.home() / "ProtexxaDatascope" / "preferences"
+
+# Full path to the theme configuration file.
+SETTINGS_FILE = PREFERENCES_DIR / "theme.json"
 
 
-def load_theme_preference():
-    if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE, "r") as f:
-            data = json.load(f)
+def load_theme_preference() -> bool:
+    """Retrieve the stored theme preference, if available."""
+
+    if SETTINGS_FILE.exists():
+        try:
+            with SETTINGS_FILE.open("r") as f:
+                data = json.load(f)
             return data.get("dark_mode", False)
+        except json.JSONDecodeError:
+            logging.error("Failed to parse %s", SETTINGS_FILE)
+            print(f"[Preferences] Failed parsing {SETTINGS_FILE}")
     return False
 
 
 # Dark Mode Save Function
-def save_theme_preference(dark_mode: bool):
-    with open(SETTINGS_FILE, "w") as f:
+def save_theme_preference(dark_mode: bool) -> None:
+    """Persist the dark mode preference to disk."""
+
+    PREFERENCES_DIR.mkdir(parents=True, exist_ok=True)
+    with SETTINGS_FILE.open("w") as f:
         json.dump({"dark_mode": dark_mode}, f)
+    logging.info("Saved theme preference to %s", SETTINGS_FILE)
+    print(f"[Preferences] Theme saved -> {SETTINGS_FILE}")
 
 
 # SETTINGS!-----------------------------------------------------------------------------------------
