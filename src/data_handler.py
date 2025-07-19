@@ -124,7 +124,7 @@ def convert_file_to_csv(input_path: str, output_dir: str) -> Path:
 
 
 
-def load_data(file_path):
+def load_data(file_path, progress_fn=None):
     """Load data from various formats and convert to CSV if needed.
 
     Parameters
@@ -132,12 +132,18 @@ def load_data(file_path):
     file_path : str
         Location of the dataset to load.
 
+    progress_fn : callable, optional
+        Callback invoked with ``(percent, message)`` updates.
+
     Returns
     -------
     pd.DataFrame | None
         Loaded DataFrame or ``None`` when the operation fails.
     """
     try:
+        if progress_fn:
+            progress_fn(0, "Starting load")
+
         suffix = Path(file_path).suffix.lower()
         if suffix == ".csv":
             df = pd.read_csv(file_path)
@@ -159,6 +165,9 @@ def load_data(file_path):
             save_filepath(csv_path)
         else:
             save_filepath(file_path)
+
+        if progress_fn:
+            progress_fn(100, "Load complete")
 
         return df
     except Exception as e:
@@ -194,7 +203,23 @@ def get_data_stats(df, file_path):
 
 
 
-def split_into_chunks(dataset_name, input_file, chunk_size_mb=256, logger_fn=None):
+def split_into_chunks(dataset_name, input_file, chunk_size_mb=256, logger_fn=None, progress_fn=None):
+    """Split a CSV into smaller chunks with optional progress updates.
+
+    Parameters
+    ----------
+    dataset_name : str
+        Name of the dataset. Used to create output folders.
+    input_file : str
+        Path to the CSV file to split.
+    chunk_size_mb : int, optional
+        Desired chunk size in megabytes. Defaults to ``256``.
+    logger_fn : callable, optional
+        Function used for log messages. ``print`` is used when omitted.
+    progress_fn : callable, optional
+        Callback invoked with ``(percent, message)`` as the file is processed.
+    """
+
     try:
         paths = create_dataset_environment(dataset_name)
         output_dir = paths["chunks"]
@@ -211,6 +236,10 @@ def split_into_chunks(dataset_name, input_file, chunk_size_mb=256, logger_fn=Non
         log(f"Reading from: {input_file}")
         log(f"Writing chunks to: {output_dir}")
         log(f"Chunk size: {chunk_size_mb} MB")
+        if progress_fn:
+            progress_fn(0, "Starting chunking")
+
+        total_bytes = os.path.getsize(input_file)
 
         with open(input_file, 'r', encoding='utf-8') as infile:
             reader = csv.reader(infile)
@@ -228,6 +257,7 @@ def split_into_chunks(dataset_name, input_file, chunk_size_mb=256, logger_fn=Non
             current_chunk = []
             current_chunk_size = 0
             row_count = 0
+            bytes_read = 0
 
             for row in tqdm(reader, desc="Splitting CSV", unit="rows"):
                 row_size = len(",".join(row).encode("utf-8"))
@@ -247,6 +277,10 @@ def split_into_chunks(dataset_name, input_file, chunk_size_mb=256, logger_fn=Non
                 current_chunk.append(row)
                 current_chunk_size += row_size
                 row_count += 1
+                bytes_read += row_size
+                if progress_fn and total_bytes > 0:
+                    progress = bytes_read / total_bytes * 100
+                    progress_fn(min(progress, 99), "Chunking")
 
             # Final chunk
             if current_chunk:
@@ -256,9 +290,13 @@ def split_into_chunks(dataset_name, input_file, chunk_size_mb=256, logger_fn=Non
                     writer.writerow(header)
                     writer.writerows(current_chunk)
                 log(f"Final chunk {chunk_index} written: {len(current_chunk)} rows")
+                bytes_read += sum(len(",".join(r).encode("utf-8")) for r in current_chunk)
 
         log(f"All chunks written. Total rows: {row_count}")
         log(f"Output directory contents: {os.listdir(output_dir)}")
+
+        if progress_fn:
+            progress_fn(100, "Chunking complete")
 
         return {
             "total_rows": row_count,
