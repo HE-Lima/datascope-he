@@ -131,6 +131,7 @@ from pathlib import Path
 #----------------------------------------------------------------------------------------------------------
 
 async def load_data_result(e: ft.FilePickerResultEvent):
+    """Handle data selection and load the chosen file asynchronously."""
     global current_df, data_loaded, app_busy
     page = e.page
 
@@ -693,7 +694,9 @@ async def transition_to_gui(page: ft.Page):
                         [
                             ft.ElevatedButton(
                                 text="Select File",
-                                icon=ft.icons.UPLOAD_FILE,
+                                # Using ``ft.Icons`` because ``ft`` exposes icons via this enumeration
+                                # rather than ``ft.icons`` which does not exist.
+                                icon=ft.Icons.UPLOAD_FILE,
                                 on_click=lambda e: dialog_controls["convert_file_picker"].pick_files(allow_multiple=False),
                             ),
                             dialog_controls["convert_file_display"],
@@ -705,7 +708,8 @@ async def transition_to_gui(page: ft.Page):
                         [
                             ft.ElevatedButton(
                                 text="Choose Folder",
-                                icon=ft.icons.FOLDER_OPEN,
+                                # Replace ``ft.icons`` with ``ft.Icons`` to prevent attribute errors
+                                icon=ft.Icons.FOLDER_OPEN,
                                 on_click=lambda e: dialog_controls["convert_dir_picker"].get_directory_path(),
                             ),
                             dialog_controls["convert_dir_display"],
@@ -715,7 +719,8 @@ async def transition_to_gui(page: ft.Page):
                     ),
                     ft.ElevatedButton(
                         text="Convert to CSV",
-                        icon=ft.icons.DOWNLOAD,
+                        # ``ft.Icons`` enumeration provides access to icon values
+                        icon=ft.Icons.DOWNLOAD,
                         on_click=on_convert_file,
                     ),
                     dialog_controls["convert_status"],
