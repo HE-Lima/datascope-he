@@ -658,6 +658,64 @@ def export_analysis_text(e: ft.ControlEvent):
 
 
 # SEAN FEATURE BUILDOUT BLOCK END------------------------------------------------------------
+def build_advanced_content() -> ft.Column:
+    """Construct the Advanced tools tab and make it scrollable.
+
+    The Advanced tools tab contains many widgets. Automatic scrolling allows
+    all controls to remain accessible regardless of screen size.
+    """
+
+    logging.info("Building Advanced tools UI")
+    print("[GUI] Building Advanced tools UI")
+
+    advanced_content = ft.Column(
+        [
+            ft.Text("Analysis", style="titleMedium"),
+            dialog_controls.get("analysis_dropdown"),
+            dialog_controls.get("desc_text"),
+            dialog_controls.get("column_dropdown"),
+            ft.Row(
+                [
+                    dialog_controls.get("rows_input"),
+                    dialog_controls.get("sort_switch"),
+                ],
+                spacing=20,
+            ),
+            dialog_controls.get("run_btn"),
+            ft.Divider(),
+            ft.Text("Load Options", weight=ft.FontWeight.BOLD),
+            ft.Row([dialog_controls.get("enc_dropdown"), dialog_controls.get("delim_dropdown")], spacing=10),
+            ft.Divider(),
+            ft.Text("Search", style="titleMedium"),
+            ft.Row([dialog_controls.get("search_term"), dialog_controls.get("search_column")], spacing=10),
+            ft.Row(
+                [
+                    dialog_controls.get("case_switch"),
+                    dialog_controls.get("whole_switch"),
+                    dialog_controls.get("search_btn"),
+                ],
+                spacing=10,
+            ),
+            ft.Row(
+                [
+                    dialog_controls.get("prev_btn"),
+                    dialog_controls.get("next_btn"),
+                    dialog_controls.get("match_label"),
+                ],
+                spacing=5,
+            ),
+            ft.Divider(),
+            ft.Text("Export", style="titleMedium"),
+            ft.Row([dialog_controls.get("export_fmt"), dialog_controls.get("export_ds_btn")], spacing=10),
+            ft.Row([dialog_controls.get("export_search_btn"), dialog_controls.get("export_analysis_btn")], spacing=10),
+        ],
+        spacing=10,
+        alignment=ft.MainAxisAlignment.START,
+        expand=True,
+        scroll=ft.ScrollMode.AUTO,
+    )
+
+    return advanced_content
 
 
 # Synchronous theme toggle handler to avoid threading issues
@@ -902,6 +960,7 @@ async def transition_to_gui(page: ft.Page):
     }
 
     desc_text = ft.Text(value="", size=12, color=ft.Colors.BLUE_GREY_600)
+    dialog_controls["desc_text"] = desc_text
 
     def on_analysis_change(e: ft.ControlEvent):
         focus_console_tab(e.page)
@@ -933,6 +992,7 @@ async def transition_to_gui(page: ft.Page):
     dialog_controls["column_dropdown"] = column_dropdown
     dialog_controls["rows_input"] = rows_input
     dialog_controls["sort_switch"] = sort_switch
+    dialog_controls["run_btn"] = run_btn
     dialog_controls["match_label"] = ft.Text("0/0")
 
     enc_dropdown = ft.Dropdown(
@@ -947,6 +1007,7 @@ async def transition_to_gui(page: ft.Page):
         on_change=lambda e: dialog_controls.__setitem__("encoding", e.control.value),
         tooltip="File encoding",
     )
+    dialog_controls["enc_dropdown"] = enc_dropdown
 
     def on_delim_change(e: ft.ControlEvent):
         dialog_controls["delimiter"] = None if e.control.value == "Auto" else e.control.value
@@ -965,6 +1026,7 @@ async def transition_to_gui(page: ft.Page):
         on_change=on_delim_change,
         tooltip="Field delimiter",
     )
+    dialog_controls["delim_dropdown"] = delim_dropdown
 
     search_term = ft.TextField(label="Search term", width=200, tooltip="Enter text to search")
     search_column = ft.Dropdown(label="Search Column", width=150, options=[ft.dropdown.Option("All Columns")])
@@ -978,6 +1040,9 @@ async def transition_to_gui(page: ft.Page):
     dialog_controls["search_column"] = search_column
     dialog_controls["case_switch"] = case_switch
     dialog_controls["whole_switch"] = whole_switch
+    dialog_controls["search_btn"] = search_btn
+    dialog_controls["prev_btn"] = prev_btn
+    dialog_controls["next_btn"] = next_btn
 
     export_fmt = ft.Dropdown(
         label="Format",
@@ -986,34 +1051,17 @@ async def transition_to_gui(page: ft.Page):
         options=[ft.dropdown.Option("csv"), ft.dropdown.Option("xlsx")],
         on_change=lambda e: dialog_controls.__setitem__("export_format", e.control.value),
     )
+    dialog_controls["export_fmt"] = export_fmt
     export_ds_btn = ft.ElevatedButton("Export Dataset", on_click=export_dataset, tooltip="Save full dataset")
     export_search_btn = ft.ElevatedButton("Export Search", on_click=export_search_results, tooltip="Save search matches")
     export_analysis_btn = ft.ElevatedButton("Export Analysis", on_click=export_analysis_text, tooltip="Save last analysis")
 
-    advanced_content = ft.Column(
-        [
-            ft.Text("Analysis", style="titleMedium"),
-            analysis_dropdown,
-            desc_text,
-            column_dropdown,
-            ft.Row([rows_input, sort_switch], spacing=20),
-            run_btn,
-            ft.Divider(),
-            ft.Text("Load Options", weight=ft.FontWeight.BOLD),
-            ft.Row([enc_dropdown, delim_dropdown], spacing=10),
-            ft.Divider(),
-            ft.Text("Search", style="titleMedium"),
-            ft.Row([search_term, search_column], spacing=10),
-            ft.Row([case_switch, whole_switch, search_btn], spacing=10),
-            ft.Row([prev_btn, next_btn, dialog_controls["match_label"]], spacing=5),
-            ft.Divider(),
-            ft.Text("Export", style="titleMedium"),
-            ft.Row([export_fmt, export_ds_btn], spacing=10),
-            ft.Row([export_search_btn, export_analysis_btn], spacing=10),
-        ],
-        spacing=10,
-        alignment=ft.MainAxisAlignment.START,
-    )
+    dialog_controls["export_ds_btn"] = export_ds_btn
+    dialog_controls["export_search_btn"] = export_search_btn
+    dialog_controls["export_analysis_btn"] = export_analysis_btn
+    
+    # Create scrollable Advanced tools tab content
+    advanced_content = build_advanced_content()
 
     # 5) Build Tabs in one shot
     dialog_controls["chunk_size_input"] = ft.TextField(
