@@ -2,9 +2,16 @@ import flet as ft
 import asyncio
 import os
 import logging
-from data_handler import create_dataset_environment, load_data, run_analysis
+from data_handler import (
+    create_dataset_environment,
+    load_data,
+    run_analysis,
+    convert_file,
+    search_dataframe,
+    export_dataframe,
+    export_text,
+)
 import data_handler
-from data_handler import convert_file_to_csv
 from pathlib import Path
 import json
 import sys
@@ -93,7 +100,18 @@ dialog_controls = {
     "convert_dir_display": None,
     "progress_bar": None,
     "progress_text": None,
+    "export_picker": None,
+    "match_label": None,
+    "export_format": "csv",
+    "encoding": "utf-8",
+    "delimiter": None,
+    "search_results": None,
+    "search_index": 0,
+    "convert_format": "csv",
+    "analysis_text": "",
 }
+
+export_context = None
 
 
 async def write_output(message: str, page: ft.Page):
@@ -156,6 +174,16 @@ async def show_progress(show: bool, page: ft.Page):
         dialog_controls["progress_bar"].visible = show
         dialog_controls["progress_text"].visible = show
         page.update()
+
+
+def show_error(message: str, page: ft.Page) -> None:
+    """Display an error dialog with the provided message."""
+    logging.error("Dialog error: %s", message)
+    print(f"[GUI Error] {message}")
+    dlg = ft.AlertDialog(title=ft.Text("Error"), content=ft.Text(message))
+    page.dialog = dlg
+    dlg.open = True
+    page.update()
 
 
 async def reset_app_state(page: ft.Page):
@@ -249,21 +277,33 @@ async def load_data_result(e: ft.FilePickerResultEvent):
 
         await show_progress(True, page)
 
-        df = await asyncio.to_thread(load_data, file_path, progress_cb)
+        df = await asyncio.to_thread(
+            load_data,
+            file_path,
+            progress_cb,
+            dialog_controls.get("encoding", "utf-8"),
+            dialog_controls.get("delimiter"),
+        )
         current_df = df
 
         await show_progress(False, page)
 
         if df is None:
             await write_output("[Error] Failed to load dataset.", page)
+            show_error("Failed to load dataset", page)
             await reset_app_state(page)
             return
 
         cd = dialog_controls["column_dropdown"]
-        cd.options = [ft.dropdown.Option("All Columns")] + [
+        options = [ft.dropdown.Option("All Columns")] + [
             ft.dropdown.Option(c) for c in current_df.columns
         ]
-        cd.value = "All Columns"  # reset selection
+        cd.options = options
+        cd.value = "All Columns"
+        sc = dialog_controls.get("search_column")
+        if sc:
+            sc.options = options
+            sc.value = "All Columns"
         page.update()
 
         info = get_data_stats(df, file_path)
@@ -336,6 +376,7 @@ async def chunk_csv_handler(e: ft.ControlEvent):
 
     except Exception as ex:
         await write_output(f"[Error] Failed to chunk file: {ex}", e.page)
+        show_error(f"Chunking failed: {ex}", e.page)
 
 
 async def handle_chunk_button(e: ft.ControlEvent):
@@ -433,7 +474,7 @@ def convert_dir_result(e: ft.FilePickerResultEvent):
 
 
 async def on_convert_file(e: ft.ControlEvent):
-    """Convert the selected file to CSV and save it to the output directory."""
+    """Convert the selected file using the chosen format."""
     global app_busy
     page = e.page
 
@@ -447,14 +488,26 @@ async def on_convert_file(e: ft.ControlEvent):
     page.update()
 
     try:
+        loop = asyncio.get_running_loop()
+
+        def progress_cb(p, m):
+            asyncio.run_coroutine_threadsafe(update_progress(p, m, page), loop)
+
+        await show_progress(True, page)
+
         output_file = await asyncio.to_thread(
-            convert_file_to_csv,
+            convert_file,
             convert_input_path,
             convert_output_dir,
+            dialog_controls.get("convert_format", "csv"),
+            progress_cb,
         )
         dialog_controls["convert_status"].value = f"Saved to {output_file}"
+        await show_progress(False, page)
     except Exception as ex:
         dialog_controls["convert_status"].value = f"Error: {ex}"
+        show_error(f"Conversion failed: {ex}", page)
+        await show_progress(False, page)
 
     app_busy = False
     page.update()
@@ -493,9 +546,115 @@ async def analysis_handler(e: ft.ControlEvent):
     # Run the analysis on a background thread
     app_busy = True
     result = await asyncio.to_thread(run_analysis, current_df, atype, col, num, desc)
+    dialog_controls["analysis_text"] = result
     await write_output(result, page)
     app_busy = False
     focus_console_tab(page)
+
+
+async def show_search_result(page: ft.Page):
+    """Display the current search result in the console."""
+    results = dialog_controls.get("search_results")
+    if not results:
+        return
+    idx = dialog_controls.get("search_index", 0)
+    row = current_df.iloc[[results[idx]]]
+    await write_output(row.to_string(index=False), page)
+    dialog_controls["match_label"].value = f"{idx+1}/{len(results)}"
+    page.update()
+
+
+async def on_search(e: ft.ControlEvent):
+    """Execute a DataFrame search based on UI selections."""
+    if current_df is None:
+        show_error("Load data before searching", e.page)
+        return
+
+    term = dialog_controls["search_term"].value
+    col_value = dialog_controls["search_column"].value
+    column = None if col_value == "All Columns" else col_value
+    case = dialog_controls["case_switch"].value
+    whole = dialog_controls["whole_switch"].value
+
+    results = search_dataframe(current_df, term, column, case, whole)
+    dialog_controls["search_results"] = results
+    dialog_controls["search_index"] = 0
+
+    if not results:
+        await write_output("No matches found.", e.page)
+        dialog_controls["match_label"].value = "0/0"
+        return
+
+    await show_search_result(e.page)
+
+
+async def on_prev_match(e: ft.ControlEvent):
+    results = dialog_controls.get("search_results")
+    if not results:
+        return
+    dialog_controls["search_index"] = (dialog_controls["search_index"] - 1) % len(results)
+    await show_search_result(e.page)
+
+
+async def on_next_match(e: ft.ControlEvent):
+    results = dialog_controls.get("search_results")
+    if not results:
+        return
+    dialog_controls["search_index"] = (dialog_controls["search_index"] + 1) % len(results)
+    await show_search_result(e.page)
+
+
+def clear_search(_: ft.ControlEvent):
+    """Reset stored search results and UI label."""
+    dialog_controls["search_results"] = None
+    dialog_controls["search_index"] = 0
+    if dialog_controls.get("match_label"):
+        dialog_controls["match_label"].value = "0/0"
+
+
+def export_picker_result(e: ft.FilePickerResultEvent):
+    """Handle path selection from the export file picker."""
+    global export_context
+    if not e.path:
+        return
+    try:
+        if export_context == "dataset" and current_df is not None:
+            export_dataframe(current_df, e.path, dialog_controls.get("export_format", "csv"))
+        elif export_context == "search" and dialog_controls.get("search_results"):
+            df = current_df.iloc[dialog_controls["search_results"]]
+            export_dataframe(df, e.path, dialog_controls.get("export_format", "csv"))
+        elif export_context == "analysis":
+            export_text(dialog_controls.get("analysis_text", ""), e.path)
+        dialog_controls["status_label"].value = f"Saved: {e.path}"
+    except Exception as ex:
+        show_error(str(ex), e.page)
+    finally:
+        export_context = None
+        e.page.update()
+
+
+def export_dataset(e: ft.ControlEvent):
+    global export_context
+    export_context = "dataset"
+    dialog_controls["export_picker"].save_file()
+
+
+def export_search_results(e: ft.ControlEvent):
+    if not dialog_controls.get("search_results"):
+        show_error("Run a search first", e.page)
+        return
+    global export_context
+    export_context = "search"
+    dialog_controls["export_picker"].save_file()
+
+
+def export_analysis_text(e: ft.ControlEvent):
+    if not dialog_controls.get("analysis_text"):
+        show_error("Run analysis first", e.page)
+        return
+    global export_context
+    export_context = "analysis"
+    dialog_controls["export_picker"].save_file()
 
 
 # SEAN FEATURE BUILDOUT BLOCK END------------------------------------------------------------
@@ -557,6 +716,9 @@ async def main(page: ft.Page):
 
     dialog_controls["convert_dir_picker"] = ft.FilePicker(on_result=convert_dir_result)
     page.overlay.append(dialog_controls["convert_dir_picker"])
+
+    dialog_controls["export_picker"] = ft.FilePicker(on_result=export_picker_result)
+    page.overlay.append(dialog_controls["export_picker"])
 
     # Theme toggle switch
     dialog_controls["theme_switch"] = ft.Switch(
@@ -731,6 +893,21 @@ async def transition_to_gui(page: ft.Page):
     dialog_controls["status_label"] = ft.Text("Ready", color=ft.Colors.BLUE)
 
     # 4) Advanced Tab Widgets (SEAN FEATURE BUILDOUT)
+    analysis_help = {
+        "Data Preview": "Show sample rows and types.",
+        "Missing Values": "Report null counts.",
+        "Duplicate Detection": "Find duplicated rows.",
+        "Placeholder Detection": "Check for placeholder tokens.",
+        "Special Character Analysis": "List non-ASCII characters.",
+    }
+
+    desc_text = ft.Text(value="", size=12, color=ft.Colors.BLUE_GREY_600)
+
+    def on_analysis_change(e: ft.ControlEvent):
+        focus_console_tab(e.page)
+        desc_text.value = analysis_help.get(e.control.value, "")
+        e.page.update()
+
     analysis_dropdown = ft.Dropdown(
         label="Analysis Type",
         width=200,
@@ -741,7 +918,8 @@ async def transition_to_gui(page: ft.Page):
             ft.dropdown.Option("Placeholder Detection"),
             ft.dropdown.Option("Special Character Analysis"),
         ],
-        on_change=lambda e: focus_console_tab(e.page),
+        on_change=on_analysis_change,
+        tooltip="Choose analysis to run",
     )
     column_dropdown = ft.Dropdown(
         label="Column", width=200, options=[ft.dropdown.Option("All Columns")]
@@ -755,13 +933,83 @@ async def transition_to_gui(page: ft.Page):
     dialog_controls["column_dropdown"] = column_dropdown
     dialog_controls["rows_input"] = rows_input
     dialog_controls["sort_switch"] = sort_switch
+    dialog_controls["match_label"] = ft.Text("0/0")
+
+    enc_dropdown = ft.Dropdown(
+        label="Encoding",
+        width=120,
+        value="utf-8",
+        options=[
+            ft.dropdown.Option("utf-8"),
+            ft.dropdown.Option("latin1"),
+            ft.dropdown.Option("utf-16"),
+        ],
+        on_change=lambda e: dialog_controls.__setitem__("encoding", e.control.value),
+        tooltip="File encoding",
+    )
+
+    def on_delim_change(e: ft.ControlEvent):
+        dialog_controls["delimiter"] = None if e.control.value == "Auto" else e.control.value
+
+    delim_dropdown = ft.Dropdown(
+        label="Delimiter",
+        width=120,
+        value="Auto",
+        options=[
+            ft.dropdown.Option("Auto"),
+            ft.dropdown.Option(","),
+            ft.dropdown.Option("\t"),
+            ft.dropdown.Option(";"),
+            ft.dropdown.Option("|"),
+        ],
+        on_change=on_delim_change,
+        tooltip="Field delimiter",
+    )
+
+    search_term = ft.TextField(label="Search term", width=200, tooltip="Enter text to search")
+    search_column = ft.Dropdown(label="Search Column", width=150, options=[ft.dropdown.Option("All Columns")])
+    case_switch = ft.Switch(label="Case", value=False)
+    whole_switch = ft.Switch(label="Whole", value=False)
+    search_btn = ft.ElevatedButton(text="Search", on_click=on_search)
+    prev_btn = ft.IconButton(icon=ft.Icons.ARROW_BACK, on_click=on_prev_match, tooltip="Previous")
+    next_btn = ft.IconButton(icon=ft.Icons.ARROW_FORWARD, on_click=on_next_match, tooltip="Next")
+
+    dialog_controls["search_term"] = search_term
+    dialog_controls["search_column"] = search_column
+    dialog_controls["case_switch"] = case_switch
+    dialog_controls["whole_switch"] = whole_switch
+
+    export_fmt = ft.Dropdown(
+        label="Format",
+        width=120,
+        value="csv",
+        options=[ft.dropdown.Option("csv"), ft.dropdown.Option("xlsx")],
+        on_change=lambda e: dialog_controls.__setitem__("export_format", e.control.value),
+    )
+    export_ds_btn = ft.ElevatedButton("Export Dataset", on_click=export_dataset, tooltip="Save full dataset")
+    export_search_btn = ft.ElevatedButton("Export Search", on_click=export_search_results, tooltip="Save search matches")
+    export_analysis_btn = ft.ElevatedButton("Export Analysis", on_click=export_analysis_text, tooltip="Save last analysis")
 
     advanced_content = ft.Column(
         [
+            ft.Text("Analysis", style="titleMedium"),
             analysis_dropdown,
+            desc_text,
             column_dropdown,
             ft.Row([rows_input, sort_switch], spacing=20),
             run_btn,
+            ft.Divider(),
+            ft.Text("Load Options", weight=ft.FontWeight.BOLD),
+            ft.Row([enc_dropdown, delim_dropdown], spacing=10),
+            ft.Divider(),
+            ft.Text("Search", style="titleMedium"),
+            ft.Row([search_term, search_column], spacing=10),
+            ft.Row([case_switch, whole_switch, search_btn], spacing=10),
+            ft.Row([prev_btn, next_btn, dialog_controls["match_label"]], spacing=5),
+            ft.Divider(),
+            ft.Text("Export", style="titleMedium"),
+            ft.Row([export_fmt, export_ds_btn], spacing=10),
+            ft.Row([export_search_btn, export_analysis_btn], spacing=10),
         ],
         spacing=10,
         alignment=ft.MainAxisAlignment.START,
@@ -846,11 +1094,22 @@ async def transition_to_gui(page: ft.Page):
                         spacing=16,
                         alignment="start",
                     ),
-                    ft.ElevatedButton(
-                        text="Convert to CSV",
-                        # ``ft.Icons`` enumeration provides access to icon values
-                        icon=ft.Icons.DOWNLOAD,
-                        on_click=on_convert_file,
+                    ft.Row(
+                        [
+                            ft.Dropdown(
+                                width=100,
+                                value="csv",
+                                options=[ft.dropdown.Option("csv"), ft.dropdown.Option("xlsx")],
+                                on_change=lambda e: dialog_controls.__setitem__("convert_format", e.control.value),
+                                tooltip="Output format",
+                            ),
+                            ft.ElevatedButton(
+                                text="Convert",
+                                icon=ft.Icons.DOWNLOAD,
+                                on_click=on_convert_file,
+                            ),
+                        ],
+                        spacing=10,
                     ),
                     dialog_controls["convert_status"],
                 ]
