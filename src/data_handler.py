@@ -245,6 +245,9 @@ def split_into_chunks(
 ):
     """Split a CSV into smaller chunks with optional progress updates.
 
+    Progress callbacks are throttled to roughly one percent increments to
+    avoid overwhelming the UI while still providing frequent feedback.
+
     Parameters
     ----------
     dataset_name : str
@@ -297,6 +300,8 @@ def split_into_chunks(
             current_chunk_size = 0
             row_count = 0
             bytes_read = 0
+            # Track last reported progress to throttle updates to ~1% steps
+            last_percent = 0
 
             for row in tqdm(reader, desc="Splitting CSV", unit="rows"):
                 row_size = len(",".join(row).encode("utf-8"))
@@ -323,7 +328,11 @@ def split_into_chunks(
                 bytes_read += row_size
                 if progress_fn and total_bytes > 0:
                     progress = bytes_read / total_bytes * 100
-                    progress_fn(min(progress, 99), "Chunking")
+                    if progress - last_percent >= 1:
+                        progress_fn(min(progress, 99), "Chunking")
+                        logger.debug("Chunking progress: %.2f%%", progress)
+                        print(f"[Data Handler] Progress: {progress:.2f}%")
+                        last_percent = progress
 
             # Final chunk
             if current_chunk:
