@@ -183,9 +183,16 @@ async def load_data_result(e: ft.FilePickerResultEvent):
         page.update()
         await asyncio.sleep(0.1)
 
-        # 4. Load the data in background
-        df = await asyncio.to_thread(load_data, file_path)
+        loop = asyncio.get_running_loop()
+        def progress_cb(p, m):
+            asyncio.run_coroutine_threadsafe(update_progress(p, m, page), loop)
+
+        await show_progress(True, page)
+
+        df = await asyncio.to_thread(load_data, file_path, progress_cb)
         current_df = df
+
+        await show_progress(False, page)
 
         # in load_data_result, right after `current_df = df`
             # after current_df = df
@@ -295,31 +302,22 @@ async def handle_chunk_button(e: ft.ControlEvent):
     app_busy = True
     page.update()
 
+    loop = asyncio.get_running_loop()
+    def progress_cb(p, m):
+        asyncio.run_coroutine_threadsafe(update_progress(p, m, page), loop)
+
+    await show_progress(True, page)
+
     result = await asyncio.to_thread(
         split_into_chunks,
         dataset_name,
         file_path,
         chunk_size_mb=chunk_size,
-        logger_fn=lambda msg: print(msg)
+        logger_fn=lambda msg: print(msg),
+        progress_fn=progress_cb,
     )
 
-    if result and result["total_chunks"] > 0:
-        dialog_controls["chunk_status"].value = (
-            f"Chunked {result['total_rows']} rows into {result['total_chunks']} files."
-        )
-    else:
-        dialog_controls["chunk_status"].value = "Chunking failed. See logs."
-
-    page.update()
-
-
-    result = await asyncio.to_thread(
-        split_into_chunks,
-        dataset_name,
-        save_filepath,
-        chunk_size_mb=chunk_size,
-        logger_fn=lambda msg: print(msg)
-    )
+    await show_progress(False, page)
 
     if result and result["total_chunks"] > 0:
         dialog_controls["chunk_status"].value = (
