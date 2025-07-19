@@ -1,8 +1,8 @@
 # src/data_handler.py
 
-#----------------------------------------------------------------------
-#Libraries
-#----------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# Libraries
+# ----------------------------------------------------------------------
 import logging
 import pandas as pd
 from pathlib import Path
@@ -12,7 +12,9 @@ from tqdm import tqdm
 from tabulate import tabulate
 
 logger = logging.getLogger(__name__)
-#----------------------------------------------------------------------
+
+
+# ----------------------------------------------------------------------
 def save_filepath(path):
     """Save the file path to a module level variable for reuse.
 
@@ -24,9 +26,11 @@ def save_filepath(path):
     saved_filepath = str(path)
     logger.info("File path saved: %s", saved_filepath)
     print(f"[Data Handler] Saved file path -> {saved_filepath}")
-#----------------------------------------------------------------------
+
+
+# ----------------------------------------------------------------------
 def create_dataset_environment(dataset_name: str) -> dict:
-    '''Create a structured directory environment for the dataset.'''
+    """Create a structured directory environment for the dataset."""
     documents_dir = Path.home() / "Documents"
     base_path = documents_dir / "ProtexxaDatascope" / dataset_name
 
@@ -35,16 +39,13 @@ def create_dataset_environment(dataset_name: str) -> dict:
         "process": base_path / "process",
         "garbage": base_path / "garbage",
         "chunks": base_path / "chunks",
-        "converted": base_path / "converted"
+        "converted": base_path / "converted",
     }
 
     for path in subdirs.values():
         path.mkdir(parents=True, exist_ok=True)
 
-    return {
-        "project": base_path,
-        **subdirs
-    }
+    return {"project": base_path, **subdirs}
 
 
 def convert_to_csv(df: pd.DataFrame, original_path: str) -> Path:
@@ -123,40 +124,78 @@ def convert_file_to_csv(input_path: str, output_dir: str) -> Path:
     return output_path
 
 
-
 def load_data(file_path, progress_fn=None):
-    """Load data from various formats and convert to CSV if needed.
+    """Load a dataset and emit incremental progress notifications.
 
     Parameters
     ----------
     file_path : str
         Location of the dataset to load.
-
     progress_fn : callable, optional
-        Callback invoked with ``(percent, message)`` updates.
+        Callback accepting ``(percent, message)`` for UI updates.
 
     Returns
     -------
     pd.DataFrame | None
-        Loaded DataFrame or ``None`` when the operation fails.
+        The loaded data, or ``None`` on failure.
+
+    Notes
+    -----
+    ``pandas`` does not provide native progress callbacks.  For text based
+    formats we therefore read the file in chunks and approximate progress
+    based on the number of rows processed.  This approach keeps the UI
+    responsive while large files are being loaded.
     """
     try:
         if progress_fn:
             progress_fn(0, "Starting load")
 
         suffix = Path(file_path).suffix.lower()
-        if suffix == ".csv":
-            df = pd.read_csv(file_path)
+
+        if suffix in {".csv", ".tsv", ".txt"}:
+            # ------------------------------------------------------------------
+            # For line-based text files we stream the data in chunks so that
+            # the progress bar can be updated incrementally.  We first count the
+            # lines to determine the total number of rows.  Progress is then
+            # calculated from the proportion of processed rows.
+            # ------------------------------------------------------------------
+            total_rows = sum(1 for _ in open(file_path, "r", encoding="utf-8"))
+            logger.info("Total rows detected: %s", total_rows)
+            print(f"[Data Handler] Total rows detected: {total_rows}")
+
+            sep = "," if suffix == ".csv" else "\t" if suffix == ".tsv" else r"\s+"
+            reader = pd.read_csv(
+                file_path,
+                sep=sep,
+                chunksize=10000,
+                engine="python" if suffix == ".txt" else "c",
+            )
+
+            chunks = []
+            rows_read = 0
+            for chunk in reader:
+                chunks.append(chunk)
+                rows_read += len(chunk)
+                if progress_fn and total_rows > 0:
+                    progress = min(rows_read / total_rows * 100, 99)
+                    progress_fn(progress, "Loading data")
+                    logger.debug("Loaded %s/%s rows", rows_read, total_rows)
+                    print(f"[Data Handler] Loaded {rows_read}/{total_rows} rows")
+
+            df = pd.concat(chunks, ignore_index=True)
+
         elif suffix in {".xls", ".xlsx"}:
+            if progress_fn:
+                progress_fn(10, "Reading Excel")
             df = pd.read_excel(file_path)
         elif suffix == ".json":
+            if progress_fn:
+                progress_fn(10, "Reading JSON")
             df = pd.read_json(file_path)
         elif suffix in {".parquet", ".pq"}:
+            if progress_fn:
+                progress_fn(10, "Reading Parquet")
             df = pd.read_parquet(file_path)
-        elif suffix == ".tsv":
-            df = pd.read_csv(file_path, sep="\t")
-        elif suffix == ".txt":
-            df = pd.read_csv(file_path, sep=r"\s+", engine="python")
         else:
             raise ValueError("Unsupported file format")
 
@@ -188,7 +227,7 @@ def get_data_stats(df, file_path):
             "row_count": row_count,
             "file_size": file_size,
             "log1": f"[Data Handler] Loaded {row_count} rows.",
-            "log2": f"[Data Handler] File size: {file_size:.2f} MB"
+            "log2": f"[Data Handler] File size: {file_size:.2f} MB",
         }
 
     except Exception as e:
@@ -197,13 +236,13 @@ def get_data_stats(df, file_path):
             "row_count": 0,
             "file_size": 0,
             "log1": "[Data Handler] Failed to get row count.",
-            "log2": "[Data Handler] Failed to calculate file size."
+            "log2": "[Data Handler] Failed to calculate file size.",
         }
 
 
-
-
-def split_into_chunks(dataset_name, input_file, chunk_size_mb=256, logger_fn=None, progress_fn=None):
+def split_into_chunks(
+    dataset_name, input_file, chunk_size_mb=256, logger_fn=None, progress_fn=None
+):
     """Split a CSV into smaller chunks with optional progress updates.
 
     Parameters
@@ -241,7 +280,7 @@ def split_into_chunks(dataset_name, input_file, chunk_size_mb=256, logger_fn=Non
 
         total_bytes = os.path.getsize(input_file)
 
-        with open(input_file, 'r', encoding='utf-8') as infile:
+        with open(input_file, "r", encoding="utf-8") as infile:
             reader = csv.reader(infile)
             try:
                 header = next(reader)
@@ -250,7 +289,7 @@ def split_into_chunks(dataset_name, input_file, chunk_size_mb=256, logger_fn=Non
                 return {
                     "total_rows": 0,
                     "total_chunks": 0,
-                    "output_dir": str(output_dir)
+                    "output_dir": str(output_dir),
                 }
 
             chunk_index = 0
@@ -263,8 +302,12 @@ def split_into_chunks(dataset_name, input_file, chunk_size_mb=256, logger_fn=Non
                 row_size = len(",".join(row).encode("utf-8"))
 
                 if current_chunk_size + row_size > chunk_size_bytes:
-                    output_file = os.path.join(output_dir, f"{base_filename}_chunk_{chunk_index}.csv")
-                    with open(output_file, 'w', encoding='utf-8', newline='') as outfile:
+                    output_file = os.path.join(
+                        output_dir, f"{base_filename}_chunk_{chunk_index}.csv"
+                    )
+                    with open(
+                        output_file, "w", encoding="utf-8", newline=""
+                    ) as outfile:
                         writer = csv.writer(outfile)
                         writer.writerow(header)
                         writer.writerows(current_chunk)
@@ -284,13 +327,17 @@ def split_into_chunks(dataset_name, input_file, chunk_size_mb=256, logger_fn=Non
 
             # Final chunk
             if current_chunk:
-                output_file = os.path.join(output_dir, f"{base_filename}_chunk_{chunk_index}.csv")
-                with open(output_file, 'w', encoding='utf-8', newline='') as outfile:
+                output_file = os.path.join(
+                    output_dir, f"{base_filename}_chunk_{chunk_index}.csv"
+                )
+                with open(output_file, "w", encoding="utf-8", newline="") as outfile:
                     writer = csv.writer(outfile)
                     writer.writerow(header)
                     writer.writerows(current_chunk)
                 log(f"Final chunk {chunk_index} written: {len(current_chunk)} rows")
-                bytes_read += sum(len(",".join(r).encode("utf-8")) for r in current_chunk)
+                bytes_read += sum(
+                    len(",".join(r).encode("utf-8")) for r in current_chunk
+                )
 
         log(f"All chunks written. Total rows: {row_count}")
         log(f"Output directory contents: {os.listdir(output_dir)}")
@@ -301,36 +348,50 @@ def split_into_chunks(dataset_name, input_file, chunk_size_mb=256, logger_fn=Non
         return {
             "total_rows": row_count,
             "total_chunks": chunk_index + 1,
-            "output_dir": str(output_dir)
+            "output_dir": str(output_dir),
         }
 
     except FileNotFoundError as e:
         logging.error(f"File not found: {e}")
-        if logger_fn: logger_fn(f"Error: {e}")
+        if logger_fn:
+            logger_fn(f"Error: {e}")
     except PermissionError as e:
         logging.error(f"Permission error: {e}")
-        if logger_fn: logger_fn(f"Error: {e}")
+        if logger_fn:
+            logger_fn(f"Error: {e}")
     except Exception as e:
         logging.error(f"Unexpected error: {e}")
-        if logger_fn: logger_fn(f"Unexpected error: {e}")
+        if logger_fn:
+            logger_fn(f"Unexpected error: {e}")
 
-    return {
-        "total_rows": 0,
-        "total_chunks": 0,
-        "output_dir": ""
-    }
+    return {"total_rows": 0, "total_chunks": 0, "output_dir": ""}
 
 
+# SOURCE APP FUNCTIONALITY BUILDOUT (SEAN)
+PLACEHOLDERS = {
+    "N/A",
+    "NA",
+    "None",
+    "none",
+    "unknown",
+    "Unknown",
+    "-",
+    "TBD",
+    "tbd",
+    "0000",
+    "",
+    "null",
+    "NULL",
+    "n/a",
+}
 
 
-#SOURCE APP FUNCTIONALITY BUILDOUT (SEAN)
-PLACEHOLDERS = {"N/A","NA","None","none","unknown","Unknown","-","TBD","tbd","0000","","null","NULL","n/a"}
-
-def run_analysis(df: pd.DataFrame,
-                 analysis_type: str,
-                 column: str = None,
-                 num_rows: int = 10,
-                 sort_desc: bool = False
+def run_analysis(
+    df: pd.DataFrame,
+    analysis_type: str,
+    column: str = None,
+    num_rows: int = 10,
+    sort_desc: bool = False,
 ) -> str:
     """
     Dispatch to one of:
@@ -345,32 +406,31 @@ def run_analysis(df: pd.DataFrame,
     working = df[[column]] if column and column in df.columns else df.copy()
     if sort_desc:
         working = working.iloc[::-1]
-    
+
     if analysis_type == "Data Preview":
         preview = working.head(num_rows)
-        dtypes = [(c,str(t)) for c,t in working.dtypes.items()]
+        dtypes = [(c, str(t)) for c, t in working.dtypes.items()]
         return (
-            "[Data Types]\n" +
-            tabulate(dtypes, headers=["Column","Dtype"], tablefmt="fancy_grid") +
-            "\n\n[Preview]\n" +
-            tabulate(preview, headers="keys", tablefmt="fancy_grid")
+            "[Data Types]\n"
+            + tabulate(dtypes, headers=["Column", "Dtype"], tablefmt="fancy_grid")
+            + "\n\n[Preview]\n"
+            + tabulate(preview, headers="keys", tablefmt="fancy_grid")
         )
-    
+
     if analysis_type == "Missing Values":
         miss = working.isnull().sum()
         total = len(working)
         rows = [
-            (c, int(cnt), f"{cnt/total*100:.2f}%")
-            for c,cnt in miss.items() if cnt>0
+            (c, int(cnt), f"{cnt/total*100:.2f}%") for c, cnt in miss.items() if cnt > 0
         ]
         if not rows:
             return "No missing values detected."
         return (
-            "=== Missing Values ===\n" +
-            tabulate(rows, headers=["Column","Count","%"], tablefmt="fancy_grid") +
-            f"\n\nTotal rows: {total}"
+            "=== Missing Values ===\n"
+            + tabulate(rows, headers=["Column", "Count", "%"], tablefmt="fancy_grid")
+            + f"\n\nTotal rows: {total}"
         )
-    
+
     if analysis_type == "Duplicate Detection":
         dups = working[working.duplicated(keep=False)]
         if dups.empty:
@@ -379,26 +439,31 @@ def run_analysis(df: pd.DataFrame,
         report = [
             ["Total Rows", len(working)],
             ["Duplicate entries", len(dups)],
-            ["Unique duplicate rows", len(unique)]
+            ["Unique duplicate rows", len(unique)],
         ]
         body = tabulate(dups.head(num_rows), headers="keys", tablefmt="fancy_grid")
-        return "🔍 Duplicate Report\n" + tabulate(report, headers=["Metric","Value"], tablefmt="fancy_grid") + "\n\n" + body
-    
+        return (
+            "🔍 Duplicate Report\n"
+            + tabulate(report, headers=["Metric", "Value"], tablefmt="fancy_grid")
+            + "\n\n"
+            + body
+        )
+
     if analysis_type == "Placeholder Detection":
         rec = []
-        total= len(working)
+        total = len(working)
         for c in working.columns:
             col_ser = working[c].astype(str).str.strip()
             cnt = col_ser.isin(PLACEHOLDERS).sum()
-            if cnt>0:
+            if cnt > 0:
                 rec.append([c, cnt, f"{cnt/total*100:.2f}%"])
         if not rec:
             return "No placeholders found."
-        return tabulate(rec, headers=["Column","Count","%"], tablefmt="fancy_grid")
-    
+        return tabulate(rec, headers=["Column", "Count", "%"], tablefmt="fancy_grid")
+
     if analysis_type == "Special Character Analysis":
         pat = r"[^\w\s]"
-        rec=[]
+        rec = []
         for c in working.columns:
             ser = working[c].astype(str)
             mask = ser.str.contains(pat, regex=True)
@@ -408,6 +473,8 @@ def run_analysis(df: pd.DataFrame,
                 rec.append([c, cnt, "".join(sorted(chars))])
         if not rec:
             return "No special characters found."
-        return tabulate(rec, headers=["Column","Count","Chars"], tablefmt="fancy_grid")
-    
+        return tabulate(
+            rec, headers=["Column", "Count", "Chars"], tablefmt="fancy_grid"
+        )
+
     return f"[Notice] {analysis_type} not recognized."
