@@ -70,6 +70,8 @@ dialog_controls = {
     "convert_dir_picker": None,
     "convert_file_display": None,
     "convert_dir_display": None,
+    "progress_bar": None,
+    "progress_text": None,
 }
 
 async def write_output(message: str, page: ft.Page):
@@ -104,6 +106,30 @@ def focus_console_tab(page: ft.Page):
     tabs = dialog_controls.get("tabs")
     if tabs:
         tabs.selected_index = 0
+        page.update()
+
+
+async def update_progress(progress: float, message: str, page: ft.Page):
+    """Update progress bar value and accompanying text.
+
+    A small utility that ensures the UI reflects the given progress
+    percentage. Also prints/logs the update for traceability.
+    """
+    logging.info("Progress update: %s%% - %s", progress, message)
+    print(f"Progress update: {progress}% - {message}")
+    if dialog_controls["progress_bar"]:
+        dialog_controls["progress_bar"].value = progress / 100.0
+        dialog_controls["progress_text"].value = f"{message} ({progress:.0f}%)"
+        page.update()
+
+
+async def show_progress(show: bool, page: ft.Page):
+    """Toggle visibility of progress related widgets."""
+    logging.info("Show progress widgets: %s", show)
+    print(f"Show progress widgets: {show}")
+    if dialog_controls["progress_bar"]:
+        dialog_controls["progress_bar"].visible = show
+        dialog_controls["progress_text"].visible = show
         page.update()
 
 async def logging_handler_test(e: ft.ControlEvent):
@@ -566,6 +592,15 @@ async def transition_to_gui(page: ft.Page):
         width=700, height=300, border_radius=20,
         border_color=ft.Colors.BLUE_GREY_200, content_padding=10, value=""
     )
+    dialog_controls["progress_bar"] = ft.ProgressBar(
+        width=700, height=10, bgcolor=ft.Colors.GREY_300,
+        color=ft.Colors.BLUE, value=0, visible=False
+    )
+    dialog_controls["progress_text"] = ft.Text(
+        value="", size=12, color=ft.Colors.BLUE,
+        text_align=ft.TextAlign.CENTER, visible=False,
+        weight=ft.FontWeight.BOLD
+    )
 
     # load / test buttons
     btn_load = ft.ElevatedButton(
@@ -738,6 +773,8 @@ async def transition_to_gui(page: ft.Page):
                 text="Console",
                 content=ft.Column([
                     dialog_controls["output_text_field"],
+                    dialog_controls["progress_bar"],
+                    dialog_controls["progress_text"],
                     button_row,
                     file_ops_frame,
                     dialog_controls["status_label"],
