@@ -13,14 +13,13 @@ import sys
 current_df = None
 
 
-
-
 # Ensure the current directory is in sys.path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 
-#SETTINGS!-----------------------------------------------------------------------------------------
+# SETTINGS!-----------------------------------------------------------------------------------------
 SETTINGS_FILE = "dataScope/preferences/theme.json"
+
 
 def load_theme_preference():
     if os.path.exists(SETTINGS_FILE):
@@ -29,11 +28,14 @@ def load_theme_preference():
             return data.get("dark_mode", False)
     return False
 
-#Dark Mode Save Function
+
+# Dark Mode Save Function
 def save_theme_preference(dark_mode: bool):
     with open(SETTINGS_FILE, "w") as f:
         json.dump({"dark_mode": dark_mode}, f)
-#SETTINGS!-----------------------------------------------------------------------------------------
+
+
+# SETTINGS!-----------------------------------------------------------------------------------------
 
 # Global flag for checking if dataset was loaded
 data_loaded = False
@@ -49,7 +51,9 @@ convert_output_dir = None
 # Icon to represent CSV splitting. Older versions of this file referenced
 # ``ft.Icon.SPLIT_CSV_OUTLINE`` which does not exist in Flet.  We gracefully
 # fall back to ``HORIZONTAL_SPLIT_OUTLINED`` to avoid runtime errors.
-SPLIT_CSV_ICON = getattr(ft.Icons, "SPLIT_CSV_OUTLINE", ft.Icons.HORIZONTAL_SPLIT_OUTLINED)
+SPLIT_CSV_ICON = getattr(
+    ft.Icons, "SPLIT_CSV_OUTLINE", ft.Icons.HORIZONTAL_SPLIT_OUTLINED
+)
 
 # Control references
 dialog_controls = {
@@ -74,17 +78,20 @@ dialog_controls = {
     "progress_text": None,
 }
 
+
 async def write_output(message: str, page: ft.Page):
     print(message)
     if dialog_controls["output_text_field"]:
         dialog_controls["output_text_field"].value += message + "\n"
         page.update()
 
+
 async def check_data_loaded(page: ft.Page):
     if not data_loaded:
         await write_output("[Error] Load data first before testing.", page)
         return False
     return True
+
 
 # Flash the logo between grayscale and color when app_busy is True
 async def flash_logo(page: ft.Page):
@@ -100,6 +107,7 @@ async def flash_logo(page: ft.Page):
         elif logo.color:
             logo.color = None
             logo.update()
+
 
 def focus_console_tab(page: ft.Page):
     """Switch to the Console tab if the tab control exists."""
@@ -132,11 +140,39 @@ async def show_progress(show: bool, page: ft.Page):
         dialog_controls["progress_text"].visible = show
         page.update()
 
+
+async def reset_app_state(page: ft.Page):
+    """Return the UI to a safe baseline after an error.
+
+    This helper clears global flags, resets dropdown options and updates
+    the status label so that the user can attempt the operation again
+    without stale state lingering.
+    """
+    global current_df, data_loaded, app_busy
+    logging.error("Resetting application state due to error")
+    print("[GUI] Resetting application state due to error")
+    current_df = None
+    data_loaded = False
+    app_busy = False
+
+    cd = dialog_controls.get("column_dropdown")
+    if cd:
+        cd.options = [ft.dropdown.Option("All Columns")]
+        cd.value = "All Columns"
+
+    dialog_controls["status_label"].value = "Ready"
+    dialog_controls["status_label"].color = ft.Colors.RED
+    page.update()
+
+
 async def logging_handler_test(e: ft.ControlEvent):
     page = e.page
     if not await check_data_loaded(page):
         return
-    await write_output("[Logging Handler] Test complete: Logging system operational.", page)
+    await write_output(
+        "[Logging Handler] Test complete: Logging system operational.", page
+    )
+
 
 async def data_handler_test(e: ft.ControlEvent):
     page = e.page
@@ -144,27 +180,31 @@ async def data_handler_test(e: ft.ControlEvent):
         return
     await write_output("[Data Handler] Test complete: Data loaded and validated.", page)
 
+
 async def visual_analyst_test(e: ft.ControlEvent):
     page = e.page
     if not await check_data_loaded(page):
         return
-    await write_output("[Visual Analyst] Test complete: Visualizations generated.", page)
+    await write_output(
+        "[Visual Analyst] Test complete: Visualizations generated.", page
+    )
 
 
-#FILE HANDLER BLOCK----------------------------------------------------------------------------------------
+# FILE HANDLER BLOCK----------------------------------------------------------------------------------------
 from data_handler import save_filepath, get_data_stats, split_into_chunks
 from pathlib import Path
-#----------------------------------------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------------------------------------
+
 
 async def load_data_result(e: ft.FilePickerResultEvent):
     """Handle data selection and load the chosen file asynchronously."""
     global current_df, data_loaded, app_busy
     page = e.page
 
-
     if e.files:
         file_path = e.files[0].path
-        save_filepath(file_path)           # ← store the real string path
+        save_filepath(file_path)  # ← store the real string path
         dialog_controls["loaded_file"] = file_path
 
         # 1. Get dataset name from file
@@ -175,7 +215,9 @@ async def load_data_result(e: ft.FilePickerResultEvent):
 
         # 2. Create environment folders for this dataset
         project_paths = create_dataset_environment(dataset_name)
-        await write_output(f"[Environment] Folders created at: {project_paths['project']}", page)
+        await write_output(
+            f"[Environment] Folders created at: {project_paths['project']}", page
+        )
 
         # 3. Show status
         dialog_controls["status_label"].value = "Loading large file..."
@@ -184,6 +226,7 @@ async def load_data_result(e: ft.FilePickerResultEvent):
         await asyncio.sleep(0.1)
 
         loop = asyncio.get_running_loop()
+
         def progress_cb(p, m):
             asyncio.run_coroutine_threadsafe(update_progress(p, m, page), loop)
 
@@ -194,17 +237,17 @@ async def load_data_result(e: ft.FilePickerResultEvent):
 
         await show_progress(False, page)
 
-        # in load_data_result, right after `current_df = df`
-            # after current_df = df
+        if df is None:
+            await write_output("[Error] Failed to load dataset.", page)
+            await reset_app_state(page)
+            return
+
         cd = dialog_controls["column_dropdown"]
         cd.options = [ft.dropdown.Option("All Columns")] + [
             ft.dropdown.Option(c) for c in current_df.columns
         ]
-        cd.value = "All Columns"   # reset selection
+        cd.value = "All Columns"  # reset selection
         page.update()
-
-
-
 
         info = get_data_stats(df, file_path)
         await write_output(info["log1"], page)
@@ -226,7 +269,6 @@ async def load_data_result(e: ft.FilePickerResultEvent):
         dialog_controls["status_label"].color = ft.Colors.RED
         app_busy = False
 
-
     page.update()
 
 
@@ -236,6 +278,7 @@ def handle_file_result(e: ft.FilePickerResultEvent):
         dialog_controls["status_label"].value = f"Loaded: {selected_file}"
         dialog_controls["status_label"].color = ft.Colors.GREEN
 
+
 async def load_data_handler(e: ft.ControlEvent):
     page = e.page
     dialog_controls["status_label"].value = "Waiting..."
@@ -244,7 +287,9 @@ async def load_data_handler(e: ft.ControlEvent):
     # ✅ Make sure the file_picker is set up *before* calling pick_files
     if dialog_controls["file_picker"] is None:
         dialog_controls["file_picker"] = ft.FilePicker(on_result=handle_file_result)
-        page.overlay.append(dialog_controls["file_picker"])  # required for FilePicker to work
+        page.overlay.append(
+            dialog_controls["file_picker"]
+        )  # required for FilePicker to work
 
     page.update()
     dialog_controls["file_picker"].pick_files(
@@ -252,8 +297,8 @@ async def load_data_handler(e: ft.ControlEvent):
         allowed_extensions=["csv", "xlsx", "xls", "txt"],
     )
 
-async def chunk_csv_handler(e: ft.ControlEvent):
 
+async def chunk_csv_handler(e: ft.ControlEvent):
 
     try:
         if not save_filepath:
@@ -268,10 +313,13 @@ async def chunk_csv_handler(e: ft.ControlEvent):
 
         split_into_chunks(save_filepath, chunks_dir, chunk_size_mb=256)
 
-        await write_output(f"[GUI] ✅ Chunking complete. Files saved in:\n{chunks_dir}", e.page)
+        await write_output(
+            f"[GUI] ✅ Chunking complete. Files saved in:\n{chunks_dir}", e.page
+        )
 
     except Exception as ex:
         await write_output(f"[Error] Failed to chunk file: {ex}", e.page)
+
 
 async def handle_chunk_button(e: ft.ControlEvent):
     """Handle the click event for the CSV chunking button.
@@ -294,7 +342,9 @@ async def handle_chunk_button(e: ft.ControlEvent):
     try:
         chunk_size = int(dialog_controls["chunk_size_input"].value)
     except ValueError:
-        dialog_controls["chunk_status"].value = "Please enter a valid number for chunk size."
+        dialog_controls["chunk_status"].value = (
+            "Please enter a valid number for chunk size."
+        )
         page.update()
         return
 
@@ -303,6 +353,7 @@ async def handle_chunk_button(e: ft.ControlEvent):
     page.update()
 
     loop = asyncio.get_running_loop()
+
     def progress_cb(p, m):
         asyncio.run_coroutine_threadsafe(update_progress(p, m, page), loop)
 
@@ -392,10 +443,9 @@ async def on_convert_file(e: ft.ControlEvent):
     page.update()
 
 
+# FILE HANDLER BLOCK END----------------------------------------------------------------------------------------
+# SEAN FEATURE BUILDOUT BLOCK-----------------------------------------------------------------
 
-
-#FILE HANDLER BLOCK END----------------------------------------------------------------------------------------
-#SEAN FEATURE BUILDOUT BLOCK-----------------------------------------------------------------
 
 async def analysis_handler(e: ft.ControlEvent):
     global app_busy
@@ -413,7 +463,7 @@ async def analysis_handler(e: ft.ControlEvent):
 
     # Read their values
     atype = ad.value
-    col   = cd.value if cd.value != "All Columns" else None
+    col = cd.value if cd.value != "All Columns" else None
 
     try:
         num = int(ri.value)
@@ -425,16 +475,13 @@ async def analysis_handler(e: ft.ControlEvent):
 
     # Run the analysis on a background thread
     app_busy = True
-    result = await asyncio.to_thread(
-        run_analysis, current_df, atype, col, num, desc
-    )
+    result = await asyncio.to_thread(run_analysis, current_df, atype, col, num, desc)
     await write_output(result, page)
     app_busy = False
     focus_console_tab(page)
 
 
-
-#SEAN FEATURE BUILDOUT BLOCK END------------------------------------------------------------
+# SEAN FEATURE BUILDOUT BLOCK END------------------------------------------------------------
 
 
 # Synchronous theme toggle handler to avoid threading issues
@@ -445,7 +492,7 @@ def on_theme_toggle(e: ft.ControlEvent):
     global current_theme_mode
     current_theme_mode = page.theme_mode
 
-    save_theme_preference(dark_mode)  
+    save_theme_preference(dark_mode)
     page.update()
 
 
@@ -482,13 +529,8 @@ async def main(page: ft.Page):
     # Start background task to flash the logo when busy
     asyncio.create_task(flash_logo(page))
 
-
-
-
     # FilePicker
-    dialog_controls["file_picker"] = ft.FilePicker(
-        on_result=load_data_result
-    )
+    dialog_controls["file_picker"] = ft.FilePicker(on_result=load_data_result)
     page.overlay.append(dialog_controls["file_picker"])
 
     dialog_controls["convert_file_picker"] = ft.FilePicker(
@@ -496,33 +538,42 @@ async def main(page: ft.Page):
     )
     page.overlay.append(dialog_controls["convert_file_picker"])
 
-    dialog_controls["convert_dir_picker"] = ft.FilePicker(
-        on_result=convert_dir_result
-    )
+    dialog_controls["convert_dir_picker"] = ft.FilePicker(on_result=convert_dir_result)
     page.overlay.append(dialog_controls["convert_dir_picker"])
 
     # Theme toggle switch
     dialog_controls["theme_switch"] = ft.Switch(
-    label="Dark Mode",
-    value=dark_mode_enabled,
-    on_change=on_theme_toggle
-)
-
+        label="Dark Mode", value=dark_mode_enabled, on_change=on_theme_toggle
+    )
 
     # Frameless Splash screen
     splash_content = ft.Column(
         [
-            ft.Text("PROPERTY OF", font_family="Helvetica", size=10, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-            ft.Image(src="assets/protexxa-logo.png", width=156, height=61, fit=ft.ImageFit.CONTAIN,
-                     error_content=ft.Text("Logo not found", color=ft.Colors.RED)),
+            ft.Text(
+                "PROPERTY OF",
+                font_family="Helvetica",
+                size=10,
+                weight=ft.FontWeight.BOLD,
+                color=ft.Colors.WHITE,
+            ),
+            ft.Image(
+                src="assets/protexxa-logo.png",
+                width=156,
+                height=61,
+                fit=ft.ImageFit.CONTAIN,
+                error_content=ft.Text("Logo not found", color=ft.Colors.RED),
+            ),
             ft.Text(
                 "13.1°N 59.32°W → 43° 39' 11.6136'' N 79° 22' 59.4624'' W\n"
                 "AICohort01: The Intelligence Migration\n"
                 "Data Cleaning Division",
-                font_family="Helvetica", size=10, color=ft.Colors.WHITE, text_align=ft.TextAlign.CENTER
+                font_family="Helvetica",
+                size=10,
+                color=ft.Colors.WHITE,
+                text_align=ft.TextAlign.CENTER,
             ),
         ],
-        alignment=ft.MainAxisAlignment.CENTER,              # <--- vertical centering
+        alignment=ft.MainAxisAlignment.CENTER,  # <--- vertical centering
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,  # <--- horizontal centering
         expand=True,
     )
@@ -541,6 +592,7 @@ async def main(page: ft.Page):
     page.update()
     await asyncio.sleep(1)  # SPLASH SCREEN DELAY (CURRENTLY 1 SECOND FOR TESTING)
     await transition_to_gui(page)
+
 
 async def transition_to_gui(page: ft.Page):
     # 1) Fade out splash screen
@@ -586,60 +638,77 @@ async def transition_to_gui(page: ft.Page):
 
     # 3) Console & File‑ops UI (must come before Tabs)
     dialog_controls["output_text_field"] = ft.TextField(
-        multiline=True, read_only=True, min_lines=20, max_lines=20,
-        width=700, height=300, border_radius=20,
-        border_color=ft.Colors.BLUE_GREY_200, content_padding=10, value=""
+        multiline=True,
+        read_only=True,
+        min_lines=20,
+        max_lines=20,
+        width=700,
+        height=300,
+        border_radius=20,
+        border_color=ft.Colors.BLUE_GREY_200,
+        content_padding=10,
+        value="",
     )
     dialog_controls["progress_bar"] = ft.ProgressBar(
-        width=700, height=10, bgcolor=ft.Colors.GREY_300,
-        color=ft.Colors.BLUE, value=0, visible=False
+        width=700,
+        height=10,
+        bgcolor=ft.Colors.GREY_300,
+        color=ft.Colors.BLUE,
+        value=0,
+        visible=False,
     )
     dialog_controls["progress_text"] = ft.Text(
-        value="", size=12, color=ft.Colors.BLUE,
-        text_align=ft.TextAlign.CENTER, visible=False,
-        weight=ft.FontWeight.BOLD
+        value="",
+        size=12,
+        color=ft.Colors.BLUE,
+        text_align=ft.TextAlign.CENTER,
+        visible=False,
+        weight=ft.FontWeight.BOLD,
     )
 
     # load / test buttons
     btn_load = ft.ElevatedButton(
         text="Load Data",
         on_click=load_data_handler,
-        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15))
+        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15)),
     )
     dialog_controls["btn_log"] = ft.ElevatedButton(
         text="Test Logging",
         on_click=logging_handler_test,
-        disabled=True, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15))
+        disabled=True,
+        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15)),
     )
     dialog_controls["btn_data"] = ft.ElevatedButton(
         text="Test Data Handling",
         on_click=data_handler_test,
-        disabled=True, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15))
+        disabled=True,
+        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15)),
     )
     dialog_controls["btn_visual"] = ft.ElevatedButton(
         text="Test Visual Analyst",
         on_click=visual_analyst_test,
-        disabled=True, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15))
+        disabled=True,
+        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15)),
     )
     button_row = ft.Row(
         controls=[
             btn_load,
             dialog_controls["btn_log"],
             dialog_controls["btn_data"],
-            dialog_controls["btn_visual"]
+            dialog_controls["btn_visual"],
         ],
         alignment=ft.MainAxisAlignment.CENTER,
-        spacing=10
+        spacing=10,
     )
 
     file_ops_frame = ft.Container(
-        content=ft.Column([
-            ft.Text("(File save buttons will go here)", color=ft.Colors.GREY_600)
-        ]),
+        content=ft.Column(
+            [ft.Text("(File save buttons will go here)", color=ft.Colors.GREY_600)]
+        ),
         border_radius=10,
         border=ft.border.all(1, ft.Colors.BLUE_GREY_200),
         padding=10,
-        width=700
+        width=700,
     )
 
     dialog_controls["status_label"] = ft.Text("Ready", color=ft.Colors.BLUE)
@@ -655,12 +724,10 @@ async def transition_to_gui(page: ft.Page):
             ft.dropdown.Option("Placeholder Detection"),
             ft.dropdown.Option("Special Character Analysis"),
         ],
-        on_change=lambda e: focus_console_tab(e.page)
+        on_change=lambda e: focus_console_tab(e.page),
     )
     column_dropdown = ft.Dropdown(
-        label="Column",
-        width=200,
-        options=[ft.dropdown.Option("All Columns")]
+        label="Column", width=200, options=[ft.dropdown.Option("All Columns")]
     )
     rows_input = ft.TextField(label="Rows to show", value="10", width=100)
     sort_switch = ft.Switch(label="Descending order", value=False)
@@ -668,23 +735,27 @@ async def transition_to_gui(page: ft.Page):
 
     # stash for the handler
     dialog_controls["analysis_dropdown"] = analysis_dropdown
-    dialog_controls["column_dropdown"]   = column_dropdown
-    dialog_controls["rows_input"]        = rows_input
-    dialog_controls["sort_switch"]       = sort_switch
+    dialog_controls["column_dropdown"] = column_dropdown
+    dialog_controls["rows_input"] = rows_input
+    dialog_controls["sort_switch"] = sort_switch
 
-    advanced_content = ft.Column([
-        analysis_dropdown,
-        column_dropdown,
-        ft.Row([rows_input, sort_switch], spacing=20),
-        run_btn
-    ], spacing=10, alignment=ft.MainAxisAlignment.START)
+    advanced_content = ft.Column(
+        [
+            analysis_dropdown,
+            column_dropdown,
+            ft.Row([rows_input, sort_switch], spacing=20),
+            run_btn,
+        ],
+        spacing=10,
+        alignment=ft.MainAxisAlignment.START,
+    )
 
     # 5) Build Tabs in one shot
     dialog_controls["chunk_size_input"] = ft.TextField(
         label="Chunk size (MB)",
         width=200,
         value=str(page.chunk_size),
-        on_change=lambda e: setattr(page, "chunk_size", int(e.control.value))
+        on_change=lambda e: setattr(page, "chunk_size", int(e.control.value)),
     )
     dialog_controls["chunk_status"] = ft.Text(value="", color=ft.Colors.GREY_700)
 
@@ -713,8 +784,12 @@ async def transition_to_gui(page: ft.Page):
     )
 
     dialog_controls["convert_status"] = ft.Text(value="", color=ft.Colors.GREY_700)
-    dialog_controls["convert_file_display"] = ft.Text("No file selected", color=ft.Colors.GREY_700)
-    dialog_controls["convert_dir_display"] = ft.Text("No folder selected", color=ft.Colors.GREY_700)
+    dialog_controls["convert_file_display"] = ft.Text(
+        "No file selected", color=ft.Colors.GREY_700
+    )
+    dialog_controls["convert_dir_display"] = ft.Text(
+        "No folder selected", color=ft.Colors.GREY_700
+    )
 
     convert_card = ft.Card(
         elevation=3,
@@ -730,7 +805,9 @@ async def transition_to_gui(page: ft.Page):
                                 # Using ``ft.Icons`` because ``ft`` exposes icons via this enumeration
                                 # rather than ``ft.icons`` which does not exist.
                                 icon=ft.Icons.UPLOAD_FILE,
-                                on_click=lambda e: dialog_controls["convert_file_picker"].pick_files(allow_multiple=False),
+                                on_click=lambda e: dialog_controls[
+                                    "convert_file_picker"
+                                ].pick_files(allow_multiple=False),
                             ),
                             dialog_controls["convert_file_display"],
                         ],
@@ -743,7 +820,9 @@ async def transition_to_gui(page: ft.Page):
                                 text="Choose Folder",
                                 # Replace ``ft.icons`` with ``ft.Icons`` to prevent attribute errors
                                 icon=ft.Icons.FOLDER_OPEN,
-                                on_click=lambda e: dialog_controls["convert_dir_picker"].get_directory_path(),
+                                on_click=lambda e: dialog_controls[
+                                    "convert_dir_picker"
+                                ].get_directory_path(),
                             ),
                             dialog_controls["convert_dir_display"],
                         ],
@@ -769,50 +848,60 @@ async def transition_to_gui(page: ft.Page):
         tabs=[
             ft.Tab(
                 text="Console",
-                content=ft.Column([
-                    dialog_controls["output_text_field"],
-                    dialog_controls["progress_bar"],
-                    dialog_controls["progress_text"],
-                    button_row,
-                    file_ops_frame,
-                    dialog_controls["status_label"],
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10)
+                content=ft.Column(
+                    [
+                        dialog_controls["output_text_field"],
+                        dialog_controls["progress_bar"],
+                        dialog_controls["progress_text"],
+                        button_row,
+                        file_ops_frame,
+                        dialog_controls["status_label"],
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=10,
+                ),
             ),
             ft.Tab(
                 text="Data Tools",
-                content=ft.Column([
-                    ft.Text("🔧 Data Tools", style="titleMedium", color=ft.Colors.GREY_800),
-                    csv_chunker_card,
-                    dialog_controls["chunk_status"],
-                    convert_card,
-                ])
+                content=ft.Column(
+                    [
+                        ft.Text(
+                            "🔧 Data Tools",
+                            style="titleMedium",
+                            color=ft.Colors.GREY_800,
+                        ),
+                        csv_chunker_card,
+                        dialog_controls["chunk_status"],
+                        convert_card,
+                    ]
+                ),
             ),
-            ft.Tab(
-                text="Advanced tools",
-                content=advanced_content
-            ),
+            ft.Tab(text="Advanced tools", content=advanced_content),
             ft.Tab(
                 text="Settings",
-                content=ft.Column([
-                    ft.Text("⚙️ Settings and preferences", color=ft.Colors.GREY_500),
-                    dialog_controls["theme_switch"]
-                ])
-            )
-        ]
+                content=ft.Column(
+                    [
+                        ft.Text("⚙️ Settings and preferences", color=ft.Colors.GREY_500),
+                        dialog_controls["theme_switch"],
+                    ]
+                ),
+            ),
+        ],
     )
     dialog_controls["tabs"] = tabs
 
-
     # 6) Render with fade-in
-    main_container = ft.Column([
-        header,
-        tabs
-    ], expand=True, opacity=0.0, animate_opacity=ft.Animation(300, ft.AnimationCurve.EASE_IN_OUT))
+    main_container = ft.Column(
+        [header, tabs],
+        expand=True,
+        opacity=0.0,
+        animate_opacity=ft.Animation(300, ft.AnimationCurve.EASE_IN_OUT),
+    )
     page.add(main_container)
     page.update()
     main_container.opacity = 1.0
     page.update()
 
-    
+
 if __name__ == "__main__":
     ft.app(target=main, assets_dir="assets")
